@@ -6,12 +6,11 @@ task_type: code
 brownfield_context:
   project_type: greenfield
   context_references:
-  - reference/final_scenario.py (Supervisor + MCP 조립 방식)
-  - reference/mcp_server.py (fastmcp stdio 서버, 도구 docstring 작성 방식)
-  - reference/guards_input.py, reference/guards_refusal.py (규칙+LLM 입력 가드레일, 고정 거절 문구, 감사 로그)
-  - reference/local_tracer.py (JSONL 실행 추적)
-  - reference/run_eval.py, reference/eval_set.json (type별 자동 판정, DoD 판정)
-  - reference/llm_judge.py (고정 루브릭 LLM 심사)
+  - path: C:\Users\SDS\mini-pjt\reference
+    role: reference
+    summary: 'Day7 체크포인트 참고 코드(읽기 전용, 수정 금지). final_scenario.py는 Supervisor + MCP 조립 방식, mcp_server.py는 fastmcp stdio 서버와 도구 docstring
+      작성 방식, guards_input.py와 guards_refusal.py는 규칙+LLM 입력 가드레일, 고정 거절 문구, 감사 로그, local_tracer.py는 JSONL 실행 추적, run_eval.py와
+      eval_set.json은 type별 자동 판정과 DoD 판정, llm_judge.py는 고정 루브릭 LLM 심사를 보여 준다.'
   existing_patterns:
   - ChatBedrockConverse(model, region_name, temperature=0)
   - langchain_mcp_adapters MultiServerMCPClient(stdio) -> create_react_agent -> create_supervisor
