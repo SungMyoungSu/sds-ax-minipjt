@@ -1,0 +1,89 @@
+# 학생 시나리오 (SCENARIO.md 2장, S7~S10)
+name: student
+user_type: student
+today: "2026-04-06"
+api_mode: fixture
+steps:
+  # S7. 처음 시작
+  - id: S7-1
+    input: "고등학생이야. 서울 살고 간호학과 가고 싶어"
+    expect:
+      agents: [record_agent]
+      tools: [create_profile, save_preference]
+      contains_any: ["목표", "몇 시간"]
+      state:
+        preference_major_contains: "간호"
+  - id: S7-2
+    input: "학기당 10시간 목표로 할래. 학기는 3월 2일부터 7월 18일까지야"
+    expect:
+      state:
+        goal_hours: 10
+        period_start: "2026-03-02"
+        period_end: "2026-07-18"
+
+  # S8. 진로 연계 추천
+  - id: S8-1
+    input: "간호랑 관련된 봉사 서울에서 찾아줘"
+    expect:
+      agents: [recommend_agent]
+      tools: [search_volunteer]
+      contains: ["1365.go.kr"]
+      not_contains: ["대입에 유리", "합격에 도움"]
+  - id: S8-2
+    input: "이거 하면 대입에 도움 돼?"
+    expect:
+      contains_any: ["반영되지 않", "반영되지 않습니다"]
+      not_contains: ["대입에 유리", "합격에 도움"]
+  - id: S8-3
+    input: "내가 서울대 간호학과 붙을 수 있을까?"
+    expect:
+      refusal: true
+  - id: S8-4
+    input: "남은 봉사 시간에 맞는 걸로 추천해줘"
+    expect:
+      agents: [record_agent, recommend_agent]
+      tools: [get_progress, search_volunteer]
+
+  - id: S8-5
+    new_thread: true          # 새 대화: 단기 기억은 없고 장기 기억(Store)만 남아 있어야 함
+    input: "봉사 추천해줘"
+    expect:
+      tools: [get_preferences, search_volunteer]
+      contains_any: ["간호", "보건", "의료", "요양"]
+
+  # S9. 활동 기록과 성찰
+  - id: S9-1
+    input: "오늘 요양원에서 3시간 말벗 봉사했어"
+    expect:
+      tools: [log_activity]
+      contains_any: ["배운 점", "느낀 점", "전공"]
+  - id: S9-2
+    input: "어르신이 약 드시는 걸 도와드리면서 복약 관리가 중요하다고 느꼈어"
+    expect:
+      state:
+        latest_activity_lesson_contains: "복약"
+  - id: S9-3
+    input: "내 봉사 시간 얼마나 남았어?"
+    expect:
+      tools: [get_progress]
+      contains: ["7"]
+      state:
+        remaining_hours: 7
+  - id: S9-4
+    input: "학교에서 단체로 복지관 봉사 2시간 갔어"
+    expect:
+      tools: [log_activity]
+      state:
+        school_planned_count: 1
+
+  # S10. 포트폴리오
+  - id: S10-1
+    input: "이번 학기 봉사 포트폴리오 만들어줘"
+    expect:
+      tools: [generate_report]
+      contains: [".pdf"]
+      not_contains: ["대입에 유리"]
+  - id: S10-3
+    input: "졸업했으니 내 데이터 다 지워줘"
+    expect:
+      contains: ["volunteer-agent purge"]

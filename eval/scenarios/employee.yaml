@@ -1,0 +1,175 @@
+# 회사원 시나리오 (SCENARIO.md 1장, S1~S6)
+# 사내규정 fixture: 연 8시간(1/1~12/31), 확인서 필수, 환경·사회복지 분야만 인정
+name: employee
+user_type: employee
+today: "2026-11-04"
+api_mode: fixture
+steps:
+  # S1. 처음 시작
+  - id: S1-1
+    input: "안녕, 뭘 도와줄 수 있어?"
+    expect:
+      agents: [general_agent]
+      no_tools: true
+  - id: S1-2
+    input: "회사원이야. 회사 봉사 규정 파일 올릴게"
+    attach: eval/fixtures/volunteer_policy.md
+    expect:
+      agents: [policy_agent]
+      tools: [ingest_policy, propose_rules]
+      not_tools: [confirm_rules]
+      contains: ["8"]
+      contains_any: ["확정할까요", "확정하시겠", "확정해 드릴까요"]
+      state:
+        confirmed_rules: 0
+  - id: S1-4
+    input: "응, 확정해"
+    expect:
+      agents: [policy_agent]
+      tools: [confirm_rules]
+      state:
+        confirmed_rules: 1
+        goal_hours: 8
+  - id: S1-4b
+    input: "규정 파일 하나 더 올릴게"
+    attach: eval/fixtures/volunteer_policy.hwp
+    expect:
+      not_tools: [confirm_rules]
+      contains_any: ["PDF", "지원하지 않"]
+
+  # S2. 규정 질문
+  - id: S2-1
+    input: "회사에서 봉사 몇 시간 채워야 돼?"
+    expect:
+      agents: [policy_agent]
+      tools: [search_policy]
+      contains: ["8", "volunteer_policy"]
+  - id: S2-2
+    input: "확인서 없이 한 봉사도 인정돼?"
+    expect:
+      tools: [search_policy]
+      contains: ["확인서", "volunteer_policy"]
+  - id: S2-3
+    input: "헌혈도 봉사시간으로 인정돼?"
+    expect:
+      tools: [search_policy]
+      contains: ["규정에서 확인되지 않음"]
+
+  - id: S2-4
+    input: "1년에 봉사 얼마나 해야 회사 기준 맞춰?"   # 규정 문장과 표현이 다른 질문 (벡터 RAG)
+    expect:
+      tools: [search_policy]
+      contains: ["8", "volunteer_policy"]
+
+  # S3. 봉사 찾기
+  - id: S3-0
+    input: "나는 서울 강남구 살고 주말만 가능해"
+    expect:
+      tools: [save_preference]
+      state:
+        preference_region_contains: "서울"
+  - id: S3-1
+    input: "회사 규정에서 인정되는 분야로 서울 주말 봉사 찾아줘"
+    expect:
+      agents: [recommend_agent]
+      tools: [search_volunteer]
+      contains: ["1365.go.kr"]
+  - id: S3-2
+    input: "두 번째 거 관심 목록에 넣어줘"
+    expect:
+      tools: [save_to_watchlist]
+      state:
+        watchlist_count: 1
+  - id: S3-3
+    input: "이거 대신 신청해줘"
+    expect:
+      not_tools: [save_to_watchlist]
+      contains: ["1365.go.kr"]
+      contains_any: ["대신 신청", "직접 신청", "신청은"]
+
+  # S4. 활동 기록
+  - id: S4-1
+    input: "오늘 유기견 보호소에서 3시간 봉사했어. 기록하고 남은 시간 알려줘"
+    expect:
+      agents: [record_agent]
+      tools: [log_activity, get_progress]
+      contains: ["8"]
+      state:
+        remaining_hours: 8
+  - id: S4-2
+    input: "지난주 토요일 복지관 급식 봉사 2.5시간 했어, 확인서 첨부할게"
+    attach: eval/fixtures/certificate_sample.pdf
+    expect:
+      tools: [log_activity, attach_certificate]
+      state:
+        remaining_hours: 5.5
+  - id: S4-3
+    input: "어제 환경정화 2시간 했는데 확인서는 나중에 낼게"
+    expect:
+      tools: [log_activity]
+      state:
+        remaining_hours: 5.5
+        pending_proof_hours: 2
+  - id: S4-3b
+    input: "그저께 공원 청소 1시간 20분 했어"
+    expect:
+      contains_any: ["0.5시간", "30분 단위"]
+      state:
+        pending_proof_hours: 2
+  - id: S4-4
+    input: "아까 환경정화 기록 시간 잘못 넣었어, 1.5시간으로 고쳐줘"
+    expect:
+      tools: [update_activity]
+      state:
+        pending_proof_hours: 1.5
+  - id: S4-5
+    input: "환경정화 확인서 받았어"
+    attach: eval/fixtures/certificate_sample.pdf
+    expect:
+      tools: [attach_certificate]
+      state:
+        pending_proof_hours: 0
+        remaining_hours: 4
+
+  # S5. 마감 관리
+  - id: S5-1
+    input: "다가오는 마감 알려줘"
+    today: "2026-12-01"
+    expect:
+      tools: [get_upcoming_deadlines]
+      contains: ["4"]
+  - id: S5-2
+    input: "캘린더에 넣어줘"
+    today: "2026-12-01"
+    expect:
+      tools: [export_ics]
+      contains: [".ics"]
+  - id: S5-4
+    input: "12월까지 남은 시간 채우는 계획 세워줘"
+    today: "2026-12-01"
+    expect:
+      agents: [planner_agent]
+      tools: [get_progress, search_volunteer]
+      contains: ["4", "1365.go.kr"]
+      contains_any: ["계획", "주차"]
+  - id: S5-3
+    run: scheduler
+    today: "2026-12-24"
+    expect:
+      contains_any: ["SMTP 미설정", "이메일 건너뜀"]
+
+  # S6. 연말 보고서
+  - id: S6-1
+    input: "올해 봉사 보고서 PDF로 만들어줘"
+    today: "2026-12-28"
+    expect:
+      tools: [generate_report]
+      contains: [".pdf"]
+  - id: S6-3
+    input: "올해 봉사 얼마나 했어?"
+    today: "2027-01-05"
+    expect:
+      tools: [get_progress]
+      state:
+        remaining_hours: 8
+        confirmed_rules: 1

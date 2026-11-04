@@ -19,12 +19,13 @@
 
 ## 기술 스택
 - Windows 11, Python 3.13, uv
-- LangGraph(`create_supervisor`, `create_react_agent`), langchain-aws `ChatBedrockConverse`(temperature 0), langchain-mcp-adapters, fastmcp(stdio)
+- LangGraph(`create_supervisor`, `create_react_agent`, `StateGraph`, checkpointer, Store), langchain-aws `ChatBedrockConverse`(temperature 0)와 `BedrockEmbeddings`(Titan), langchain-chroma, langchain-mcp-adapters, fastmcp(stdio), Pydantic
 - SQLite, pypdf, reportlab(한글 폰트 임베드), icalendar, Streamlit(localhost 전용)
 
 ## 아키텍처 불변 규칙
 ```
-입력 가드레일 → Supervisor → policy_agent / record_agent / recommend_agent / general_agent → 로컬 MCP 서버 → SQLite·DATA_DIR·data.go.kr·SMTP
+입력 가드레일 → Supervisor(checkpointer) → policy_agent / record_agent / recommend_agent / planner_agent / general_agent
+  → 로컬 MCP 서버 → SQLite·Chroma·DATA_DIR·data.go.kr·SMTP     (장기 기억: LangGraph Store)
 ```
 - **에이전트는 Python 코드로 정의합니다** (`reference/final_scenario.py` 방식). 역할 프롬프트, 담당 도구 목록, Supervisor 배분 기준은 코드에 두고, 그 코드가 유일한 기준(source of truth)입니다. 에이전트 정의를 별도 Markdown 문서로 두지 않습니다.
 - Agent별 역할과 도구 경계는 다음과 같습니다. 각 Agent에는 자기 도구 목록만 바인딩합니다.
@@ -33,13 +34,20 @@
 |---|---|---|
 | policy_agent | 사내규정 수집, 검색, 규칙 후보 생성과 확정 | `ingest_policy`, `search_policy`, `propose_rules`, `confirm_rules` |
 | record_agent | 프로필, 활동, 집계, 마감, 보고서 | `create_profile`, `list_profiles`, `log_activity`, `update_activity`, `delete_activity`, `attach_certificate`, `get_progress`, `get_upcoming_deadlines`, `export_ics`, `generate_report` |
-| recommend_agent | 공공 API 추천, 관심 목록 | `search_volunteer`, `save_to_watchlist`, `remove_from_watchlist` |
+| recommend_agent | 공공 API 추천, 관심 목록, 선호 기억 | `search_volunteer`, `save_to_watchlist`, `remove_from_watchlist`, `save_preference`, `get_preferences` |
+| planner_agent | 봉사 계획 (Plan-and-Execute 그래프) | 실행 단계에서 `get_progress`, `get_upcoming_deadlines`, `get_preferences`, `search_volunteer` |
 | general_agent | 인사, 기능 안내 | 도구 없음 |
+
+- reference 기술은 모두 v1에서 씁니다. 어디에 쓰는지는 `SERVICE.md`의 "reference 기술 적용 대응표"가 기준입니다.
+  - **벡터 RAG:** 규정 검색은 BM25 + Titan 임베딩 + Chroma 하이브리드(RRF)입니다. 임베딩이 실패하면 BM25만 씁니다.
+  - **장기 기억:** LangGraph Store(로컬 SQLite)에 지역, 요일, 관심 분야, 전공을 저장합니다. `save_preference`와 `get_preferences`만 MCP가 아닌 Python 도구입니다.
+  - **Plan-and-Execute:** planner_agent는 planner → execute → replan → finalize 그래프이고, recursion_limit은 40입니다. 계획은 제안만 합니다.
+  - **구조화 출력:** 가드레일 판별, Plan·Replan, RuleCandidate는 Pydantic + `with_structured_output`으로 만듭니다.
 
 - **대화 상태**는 LangGraph checkpointer로 `thread_id` 단위로 기억합니다. CLI 실행 1회, Streamlit 세션 1개, 평가 문항 1개가 각각 thread 하나입니다.
 - **사용자**는 PC당 1명입니다. 처음 실행할 때 `user_type`(employee 또는 student)을 저장합니다.
 - 사용자 흐름의 기준은 `SCENARIO.md`입니다. 기능을 바꾸면 해당 시나리오도 함께 고칩니다.
-- MCP 서버는 **LLM을 호출하지 않는 결정적 코드**입니다. 모든 도구 docstring에는 "언제 쓰는가"와 "언제 쓰지 않는가"를 적습니다 (`reference/mcp_server.py` 방식).
+- MCP 서버는 **채팅 LLM을 호출하지 않는 결정적 코드**입니다. 예외는 규정 검색용 임베딩 호출 하나뿐입니다. 모든 도구 docstring에는 "언제 쓰는가"와 "언제 쓰지 않는가"를 적습니다 (`reference/mcp_server.py` 방식).
 - Agent, 도구, 가드레일을 추가하거나 바꿀 때는 `SERVICE.md` 3~5장과 `eval/eval_set.json`을 함께 고칩니다.
 
 ## 가드레일 (절대 어기지 않음)
@@ -65,15 +73,21 @@
 ```bash
 uv sync                                   # 의존성 설치
 uv run pytest                             # 단위 테스트 (Bedrock·라이브 API 테스트는 키가 없으면 skip)
+uv run volunteer-agent scenario eval/scenarios/   # CLI 시나리오 절차별 평가 (주 평가, Bedrock 키 필요)
 uv run python eval/run_eval.py            # 12건 인-아웃 평가 (.env의 Bedrock 키 필요)
+uv run python eval/llm_judge.py           # LLM 심사 6문항 (평균 4점 이상)
+uv run volunteer-agent check              # 통합 점검 (복합 질문 + 주입 + 정상 질문)
+uv run volunteer-agent chat --show-trace  # 대화형 CLI (주 화면)
 uv run volunteer-agent --once "질문"       # CLI 한 번 실행
-uv run streamlit run app.py               # 로컬 화면
+uv run streamlit run app.py               # 로컬 화면 (보조)
 uv run volunteer-agent export             # DATA_DIR zip 내보내기
 uv run volunteer-agent purge              # DATA_DIR 삭제 (확인 문구 필요)
 ```
 
 ## 완료 기준 (DoD)
-- 기능: 인-아웃 12건 중 10건 이상 통과, `uv run pytest` 통과
+- **평가는 CLI에서 실행합니다.** 아래 기능 조건 두 가지를 모두 만족해야 합니다.
+- 기능: (1) CLI 시나리오 3개(`eval/scenarios/`)의 모든 단계 통과, (2) 인-아웃 12건 중 10건 이상 통과, 그리고 `uv run pytest` 통과
+- 시나리오 단계(`eval/scenarios/*.yaml`)는 평가 기준이므로, 테스트를 통과시키려고 기대값을 느슨하게 고치지 않습니다. 바꿔야 하면 사용자와 먼저 합의합니다.
 - 안전: guardrail 문항 전부 통과, 비밀 정보 노출 0건
 - 관측: 평가를 실행하면 `trace.jsonl`에 문항별 도구 호출과 지연시간이 남음
 - 설명: `SERVICE.md` 3장의 구조도가 실제 `build_app()` 구성과 일치
