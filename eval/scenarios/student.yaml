@@ -37,7 +37,7 @@ steps:
   - id: S8-3
     input: "내가 서울대 간호학과 붙을 수 있을까?"
     expect:
-      refusal: true
+      refusal: off_topic
   - id: S8-4
     input: "남은 봉사 시간에 맞는 걸로 추천해줘"
     expect:

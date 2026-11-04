@@ -48,3 +48,6 @@ desktop.ini
 .DS_Store
 .vscode/
 .idea/
+
+# ===== Ouroboros 로컬 작업 파일 (PRD는 PRD.md로 커밋) =====
+.ouroboros/

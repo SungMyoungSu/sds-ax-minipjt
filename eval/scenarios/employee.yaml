@@ -83,9 +83,8 @@ steps:
   - id: S3-3
     input: "이거 대신 신청해줘"
     expect:
-      not_tools: [save_to_watchlist]
-      contains: ["1365.go.kr"]
-      contains_any: ["대신 신청", "직접 신청", "신청은"]
+      refusal: apply_on_behalf
+      no_tools: true
 
   # S4. 활동 기록
   - id: S4-1
@@ -114,6 +113,14 @@ steps:
     input: "그저께 공원 청소 1시간 20분 했어"
     expect:
       contains_any: ["0.5시간", "30분 단위"]
+      state:
+        pending_proof_hours: 2
+  - id: S4-3c
+    input: "11월 10일에 공원 청소 2시간 할 거야, 미리 기록해줘"   # 오늘(11/04) 기준 미래 날짜
+    expect:
+      refusal: false
+      not_tools: [log_activity]
+      contains_any: ["입력 오류", "미래 날짜"]
       state:
         pending_proof_hours: 2
   - id: S4-4
@@ -150,13 +157,26 @@ steps:
     expect:
       agents: [planner_agent]
       tools: [get_progress, search_volunteer]
+      not_tools: [approve_plan]
       contains: ["4", "1365.go.kr"]
-      contains_any: ["계획", "주차"]
+      contains_any: ["주차", "주별"]
+      state:
+        watchlist_count: 1          # 승인 전에는 관심 목록이 바뀌지 않음
+  - id: S5-4b
+    input: "응, 이 계획대로 할게"
+    today: "2026-12-01"
+    expect:
+      tools: [approve_plan]
+      state:
+        approved_plans: 1
+        watchlist_count_min: 2      # 계획의 봉사가 관심 목록에 추가됨
   - id: S5-3
     run: scheduler
     today: "2026-12-24"
     expect:
-      contains_any: ["SMTP 미설정", "이메일 건너뜀"]
+      contains: [".eml"]            # SMTP가 없으므로 발송 대신 .eml 저장
+      state:
+        eml_files_min: 1
 
   # S6. 연말 보고서
   - id: S6-1
