@@ -1,7 +1,50 @@
+# ===== 비밀 정보 =====
+# 실제 키는 .env에만 둡니다. 템플릿(.env.example)만 커밋합니다.
 .env
+.env.*
+!.env.example
+
+# ===== Python / uv =====
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# ===== 로컬 데이터 (개인정보·확인서·DB) =====
 data/
 *.sqlite
+*.sqlite3
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
+chroma_db/
+
+# ===== 실행 산출물 (로그·trace·평가 결과) =====
+*.log
+guard_audit.log
+trace.jsonl
+*_trace.jsonl
+eval_result.json
+output/
+reports/*.pdf
+*.ics
+
+# ===== reference 실행 시 생성되는 더미 데이터 =====
+reference/employees.json
+reference/assets.json
+reference/projects.json
+
+# ===== OS / 에디터 =====
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
