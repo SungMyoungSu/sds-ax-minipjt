@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "개인용 봉사활동 추천·관리 에이전트"
 requires-python = ">=3.13"
 dependencies = [
+    "icalendar>=7.3.0",
     "langchain-aws>=1.9.1",
     "langchain-chroma>=1.1.0",
     "pydantic>=2.14.2",
@@ -16,7 +17,10 @@ dependencies = [
 volunteer-agent = "volunteer_agent.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "aiosmtpd>=1.4.6",
+    "pytest>=8.0",
+]
 
 [build-system]
 requires = ["hatchling"]

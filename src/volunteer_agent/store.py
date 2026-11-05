@@ -27,12 +27,13 @@ from volunteer_agent.models import (
 )
 
 DB_FILENAME = "volunteer.db"
-SCHEMA_VERSION = 2  # 2: rule_candidates.status에 superseded 추가
+SCHEMA_VERSION = 3  # 2: rule_candidates.status에 superseded 추가, 3: user_settings.alert_consent
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS user_settings(
   id INTEGER PRIMARY KEY CHECK(id = 1),
   user_type TEXT NOT NULL CHECK(user_type IN ('employee','student')),
+  alert_consent INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS profiles(
@@ -212,7 +213,8 @@ class Store:
         row = self.conn.execute("SELECT * FROM user_settings WHERE id = 1").fetchone()
         if row is None:
             return None
-        return UserSetting(user_type=row["user_type"], created_at=_pdt(row["created_at"]))
+        return UserSetting(user_type=row["user_type"], created_at=_pdt(row["created_at"]),
+                           alert_consent=bool(row["alert_consent"]))
 
     def init_user_setting(self, user_type: str) -> UserSetting:
         """처음 실행할 때 한 번만 저장한다. 유형은 이후 바꾸지 않는다."""
@@ -222,6 +224,14 @@ class Store:
             "INSERT INTO user_settings(id, user_type, created_at) VALUES (1, ?, ?)",
             (user_type, self._stamp()),
         )
+        return self.get_user_setting()
+
+    def set_alert_consent(self, consent: bool) -> UserSetting:
+        """메일 알림 수신 동의(SMTP를 처음 설정할 때 받는다, G11)."""
+        if self.get_user_setting() is None:
+            raise StoreError("사용자 설정이 없습니다.")
+        with self.conn:
+            self.conn.execute("UPDATE user_settings SET alert_consent = ? WHERE id = 1", (int(consent),))
         return self.get_user_setting()
 
     # ---- 기준 프로필 ----

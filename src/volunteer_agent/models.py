@@ -31,6 +31,7 @@ NOTIFICATION_CHANNELS: tuple[str, ...] = ("smtp", "eml")
 class UserSetting:
     user_type: UserType
     created_at: datetime
+    alert_consent: bool = False
 
 
 @dataclass
