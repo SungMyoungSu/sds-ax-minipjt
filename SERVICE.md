@@ -2,7 +2,7 @@
 
 개인이 봉사활동을 찾고, 기록하고, 마감을 놓치지 않게 돕는 다중 에이전트 서비스입니다. LangGraph Supervisor가 AWS Bedrock(Claude)과 로컬 MCP 서버를 묶고, 사용자는 CLI와 로컬 Streamlit 화면으로 씁니다.
 
-구현 명세는 [`seeds/volunteer-agent-v2.seed.yaml`](seeds/volunteer-agent-v2.seed.yaml) 2.5.0(AC1~AC25, AC24는 유형 전환 삭제로 결번)에 있습니다. 기능별 상세 요구사항은 PM 인터뷰 결과를 정리한 [`PRD.md`](PRD.md)(성공 기준 38개)를, 평가셋은 [`eval/eval_set.json`](eval/eval_set.json)과 [`eval/scenarios/`](eval/scenarios/)를 봅니다.
+구현 명세는 [`seeds/volunteer-agent-v2.seed.yaml`](seeds/volunteer-agent-v2.seed.yaml) 2.5.1(AC1~AC25, AC24는 유형 전환 삭제로 결번)에 있습니다. 기능별 상세 요구사항은 PM 인터뷰 결과를 정리한 [`PRD.md`](PRD.md)(성공 기준 38개)를, 평가셋은 [`eval/eval_set.json`](eval/eval_set.json)과 [`eval/scenarios/`](eval/scenarios/)를 봅니다.
 
 ---
 
@@ -79,7 +79,7 @@ v1은 본인과 지인이 Windows PC에서 쓰는 개인 도구입니다. PC 한
                  로컬 MCP 서버 (fastmcp, 채팅 LLM 호출 없음)
       ┌──────────┬───────────┬─────────────┬─────────────┬──────────────┐
    SQLite    DATA_DIR     Chroma +       data.go.kr     SMTP          .ics / PDF
-   (원장)   (확인서 사본)  Titan 임베딩   (1365·청소년)  (본인 계정)     (로컬 파일)
+   (원장)   (확인서 사본)  Titan 임베딩   (1365)         (본인 계정)     (로컬 파일)
                           (규정 벡터 검색)
 
    Windows 작업 스케줄러 → 마감 점검 진입점 (하루 1회, 같은 DB 사용)
@@ -130,9 +130,8 @@ v1은 본인과 지인이 Windows PC에서 쓰는 개인 도구입니다. PC 한
 ### 데이터
 | 데이터 | 출처 | 비고 |
 |---|---|---|
-| 봉사 모집 정보 | data.go.kr 1365 봉사참여정보 API (15157582) | XML 형식. 사용자가 개인 서비스 키를 발급받아 씁니다. 타임아웃 10초 |
-| 청소년 봉사 프로그램 | data.go.kr 청소년 봉사 프로그램 API (15156325) | 학생 추천에 씁니다 |
-| 활동 유형 코드 | 1365 분야 코드를 바탕으로 한 고정 목록(코드표 파일) | 사내규정의 인정 유형을 이 목록에 맞추고, 사용자가 확정합니다 |
+| 봉사 모집 정보 | data.go.kr 1365 봉사참여정보 API (15157582) | XML 형식. 사용자가 개인 서비스 키를 발급받아 씁니다. 목록 오퍼레이션은 설정값(`VOLUNTEER_1365_LIST_OPERATION`, 기본 `getVltrSearchWordList`), 타임아웃 10초. 학생 추천의 청소년 참여 가능 여부도 이 응답(`yngbgsPosblAt`)으로 거릅니다. 청소년 봉사 프로그램 API(15156325)는 지난 운영 이력만 주고 날짜·상태로 거를 수 없어 쓰지 않습니다 |
+| 활동 유형 코드 | 1365 분야 대분류 15개(코드표 파일, 2026-11-05 실제 응답으로 확인) | 사내규정의 인정 유형을 이 목록에 맞추고, 사용자가 확정합니다 |
 | 사내규정 | 사용자가 올린 `.md`나 텍스트 PDF | 로컬에만 둡니다. 조항 단위로 나눠 BM25 색인과 Chroma 벡터 색인(`DATA_DIR/chroma`)을 함께 만듭니다. 평가용 fixture는 `eval/fixtures/volunteer_policy.md`입니다 |
 | 사용자 선호 | 사용자 발화 | LangGraph Store(로컬 SQLite)에 저장하고, `purge`하면 같이 지웁니다 |
 | 활동 기록과 확인서 | 사용자 입력과 첨부 파일 | SQLite와 `DATA_DIR`에 저장합니다 |
