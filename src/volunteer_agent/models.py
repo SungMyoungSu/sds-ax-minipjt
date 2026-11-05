@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 UserType = Literal["employee", "student"]
 ProfileSource = Literal["company_policy", "school_requirement", "self_goal", "none"]
-RuleStatus = Literal["candidate", "confirmed"]
+RuleStatus = Literal["candidate", "confirmed", "superseded"]
 PolicyFormat = Literal["md", "pdf"]
 DeadlineKind = Literal["period_end", "recruit_end", "schedule"]
 NotificationMark = Literal["D-30", "D-7", "D-1"]
@@ -20,7 +20,7 @@ NotificationChannel = Literal["smtp", "eml"]
 
 USER_TYPES: tuple[str, ...] = ("employee", "student")
 PROFILE_SOURCES: tuple[str, ...] = ("company_policy", "school_requirement", "self_goal", "none")
-RULE_STATUSES: tuple[str, ...] = ("candidate", "confirmed")
+RULE_STATUSES: tuple[str, ...] = ("candidate", "confirmed", "superseded")
 POLICY_FORMATS: tuple[str, ...] = ("md", "pdf")
 DEADLINE_KINDS: tuple[str, ...] = ("period_end", "recruit_end", "schedule")
 NOTIFICATION_MARKS: tuple[str, ...] = ("D-30", "D-7", "D-1")

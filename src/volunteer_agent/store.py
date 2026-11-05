@@ -27,7 +27,7 @@ from volunteer_agent.models import (
 )
 
 DB_FILENAME = "volunteer.db"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: rule_candidates.status에 superseded 추가
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS user_settings(
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS rule_candidates(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   document_id INTEGER REFERENCES policy_documents(id) ON DELETE SET NULL,
-  status TEXT NOT NULL DEFAULT 'candidate' CHECK(status IN ('candidate','confirmed')),
+  status TEXT NOT NULL DEFAULT 'candidate' CHECK(status IN ('candidate','confirmed','superseded')),
   goal_hours REAL,
   period_start TEXT,
   period_end TEXT,
@@ -368,6 +368,13 @@ class Store:
             sql += " AND status = ?"
             params.append(status)
         return [self._rule(r) for r in self.conn.execute(sql + " ORDER BY id", params)]
+
+    def mark_rule_superseded(self, rule_id: int) -> RuleCandidate:
+        """새 규칙이 확정되면 이전 확정 규칙은 지우지 않고 superseded로 남긴다(이력)."""
+        self._require("rule_candidates", rule_id)
+        with self.conn:
+            self.conn.execute("UPDATE rule_candidates SET status = 'superseded' WHERE id = ?", (rule_id,))
+        return self.get_rule(rule_id)
 
     def mark_rule_confirmed(self, rule_id: int) -> RuleCandidate:
         """상태만 바꾼다. 사용자 명시 승인 확인과 프로필 반영은 6단계 confirm_rules에서 한다."""
