@@ -1,0 +1,8 @@
+# localhost 전용 (외부 접속 차단). 사용 통계 전송도 끈다(외부 통신 허용 목록 밖).
+[server]
+address = "localhost"
+headless = true
+
+[browser]
+gatherUsageStats = false
+serverAddress = "localhost"

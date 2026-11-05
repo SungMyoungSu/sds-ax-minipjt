@@ -154,7 +154,7 @@
 - **완료 조건:** AC11, AC20 (a)(b) 통과(형식 부분)
 - **참고:** `reference/run_eval.py`, `reference/llm_judge.py`, `reference/integration_check.py`
 
-### [ ] 19. Streamlit 보조 화면
+### [x] 19. Streamlit 보조 화면
 - **만들 것:** `app.py`. 같은 `build_app()`을 쓰는 채팅, 세션마다 대화 1개, PDF 다운로드 버튼, localhost 전용
 - **테스트:** AC12(Streamlit AppTest)
 - **완료 조건:** AC12 전체 통과
