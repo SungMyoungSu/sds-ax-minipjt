@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "개인용 봉사활동 추천·관리 에이전트"
 requires-python = ">=3.13"
 dependencies = [
+    "fastmcp>=4.1.6",
     "icalendar>=7.3.0",
     "langchain-aws>=1.9.1",
     "langchain-chroma>=1.1.0",

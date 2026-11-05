@@ -111,13 +111,14 @@ class Program:
 class SearchQuery:
     region: str | None = None  # "서울", "서울 강남구" 등. 시도 단위로 거른다
     field_codes: list[str] = field(default_factory=list)  # 비어 있으면 분야 제한 없음
+    company_rules_applied: bool = False  # field_codes가 확정된 회사 인정 분야에서 왔는지(추천 이유 표시용)
     start: date | None = None  # 활동 기간 조건
     end: date | None = None
     youth_only: bool = False  # 학생은 청소년 참여 가능 활동만 (PRD 25)
     weekdays: list[int] | None = None  # 0=월 … 6=일. 예: 주말 [5, 6]
     keyword: str | None = None
     major: str | None = None  # 학생 희망 전공 → 관련 분야를 먼저 (PRD 27)
-    rules_unconfirmed: bool = False  # 회사 규칙 미확정이면 분야 필터 없이 마감 임박 순 (미결 결정 4)
+    rules_unconfirmed: bool = False  # 회사 규칙 미확정: 회사 인정 분야 필터 없이 마감 임박 순, 안내 표시 (미결 결정 4)
 
 
 @dataclass
@@ -132,7 +133,7 @@ class Recommendation:
             when += f" {p.start_hour}시~{p.end_hour}시"
         hours = f"{p.expected_hours}시간" if p.expected_hours else "확인 필요"
         return (
-            f"{n}. {p.title}\n"
+            f"{n}. {p.title} [1365 번호 {p.program_id}]\n"
             f"   기관: {p.organization} | 일시: {when} | 장소: {p.place}\n"
             f"   모집 마감: {_fmt_date(p.recruit_end)} | 예상 시간: {hours} | 분야: {p.field_name}\n"
             f"   추천 이유: {self.reason}\n"
@@ -350,7 +351,7 @@ def _eligible(p: Program, q: SearchQuery, sido: str | None, today: date) -> bool
         return False
     if sido and p.sido_code != sido:
         return False
-    if q.field_codes and not q.rules_unconfirmed and p.field_code not in q.field_codes:
+    if q.field_codes and p.field_code not in q.field_codes:
         return False
     if q.youth_only and not p.youth_ok:
         return False
@@ -369,7 +370,7 @@ def _reason(p: Program, q: SearchQuery, related: list[str], today: date) -> str:
     bits = []
     if p.field_code in related:
         bits.append(f"희망 전공({q.major})과 관련된 {p.field_name} 분야")
-    elif q.field_codes and not q.rules_unconfirmed:
+    elif q.company_rules_applied:
         bits.append(f"회사 인정 분야({p.field_name})")
     else:
         bits.append(f"{p.field_name} 분야")
@@ -392,8 +393,10 @@ def _suggestions(q: SearchQuery) -> list[str]:
         out.append("활동 기간을 넓혀 볼까요?")
     if q.keyword:
         out.append("검색어를 빼고 찾아볼까요?")
-    if q.field_codes and not q.rules_unconfirmed:
+    if q.company_rules_applied:
         out.append("인정 분야 밖의 봉사도 보여 드릴까요? (회사 집계에는 들어가지 않습니다)")
+    elif q.field_codes:
+        out.append("분야 조건을 빼고 찾아볼까요?")
     return out or ["조건을 조금 넓혀서 다시 찾아볼까요?"]
 
 
@@ -402,7 +405,7 @@ def search_volunteer(client: VolunteerClient, query: SearchQuery, today: date,
     """조건에 맞는 봉사를 최대 limit건 추천한다. API를 못 쓰면 샘플로 추천한다."""
     sido = resolve_sido(query.region)
     related = major_codes(query.major)
-    filter_codes = [] if query.rules_unconfirmed else query.field_codes
+    filter_codes = query.field_codes
     result = SearchResult()
     programs: dict[str, Program] = {}
     try:

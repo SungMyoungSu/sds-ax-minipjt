@@ -68,7 +68,7 @@ def test_parse_page():
 
 def test_employee_confirmed_rules_region_weekend(api_settings):
     c, fetcher = client(api_settings)
-    r = search_volunteer(c, SearchQuery(field_codes=["0800", "0100"], **SEOUL_WEEKEND), TODAY)
+    r = search_volunteer(c, SearchQuery(field_codes=["0800", "0100"], company_rules_applied=True, **SEOUL_WEEKEND), TODAY)
     # 모집완료(9000003)·마감 지남(9000004)·부산(9000005)·비인정 분야(9000006, 9000007) 제외, 마감 임박 순
     assert ids(r) == ["9000002", "9000001"]
     assert not r.sample
@@ -83,6 +83,7 @@ def test_employee_confirmed_rules_region_weekend(api_settings):
 
 def test_display_has_nine_fields(api_settings):
     r = search_volunteer(client(api_settings)[0], SearchQuery(field_codes=["0800"], region="서울"), TODAY)
+    assert "회사 인정 분야" not in r.message  # 사용자가 직접 고른 분야
     text = r.items[0].format(1)
     for label in ["한강공원 플로깅", "기관:", "일시:", "장소:", "모집 마감:", "예상 시간:", "분야:", "추천 이유:", "1365 원문:"]:
         assert label in text
@@ -100,10 +101,15 @@ def test_student_youth_only_and_major_first(api_settings):
 
 def test_rules_unconfirmed_no_field_filter_deadline_order(api_settings):
     c, fetcher = client(api_settings)
-    r = search_volunteer(c, SearchQuery(region="서울", field_codes=["0800"], rules_unconfirmed=True), TODAY)
+    r = search_volunteer(c, SearchQuery(region="서울", rules_unconfirmed=True), TODAY)
     assert "upperClCode" not in fetcher.calls[0]
     assert ids(r) == ["9000002", "9000007", "9000001", "9000006"]
-    assert "규칙 미확정" in r.message
+    assert "규칙 미확정" in r.message and "회사 인정 분야" not in r.message
+
+
+def test_user_field_applies_even_when_rules_unconfirmed(api_settings):
+    r = search_volunteer(client(api_settings)[0], SearchQuery(region="서울", field_codes=["0800"], rules_unconfirmed=True), TODAY)
+    assert ids(r) == ["9000001"]
 
 
 def test_max_five_results(api_settings, tmp_path):
@@ -122,7 +128,7 @@ def test_max_five_results(api_settings, tmp_path):
 
 
 def test_zero_results_suggest_relaxing(api_settings):
-    q = SearchQuery(region="제주", field_codes=["0800"], weekdays=[5])
+    q = SearchQuery(region="제주", field_codes=["0800"], company_rules_applied=True, weekdays=[5])
     r = search_volunteer(client(api_settings)[0], q, TODAY)
     assert r.items == []
     assert "조건에 맞는 봉사를 찾지 못했습니다." in r.message
