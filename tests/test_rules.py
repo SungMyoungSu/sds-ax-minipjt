@@ -265,4 +265,5 @@ def test_period_format_errors(bad):
 
 def test_map_policy_terms():
     assert map_policy_terms(["환경 분야", "사회복지", "0400", "보건의료"]) == (["0800", "0100", "0400", "0500"], [])
+    assert map_policy_terms(["환경·생태계보호", "멘토링"]) == (["0800", "0300"], [])
     assert map_policy_terms(["복지", "우주"]) == (["0100"], ["우주"])

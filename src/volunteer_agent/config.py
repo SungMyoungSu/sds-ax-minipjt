@@ -20,6 +20,8 @@ DEFAULT_TIMEZONE = "Asia/Seoul"
 DEFAULT_API_TIMEOUT = 10.0
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_LLM_PROVIDER = "bedrock"
+# 1365 봉사참여정보 목록 조회 오퍼레이션(2026-11-05 실제 호출로 확인). VOLUNTEER_1365_LIST_OPERATION으로 바꿀 수 있다.
+DEFAULT_1365_LIST_OPERATION = "getVltrSearchWordList"
 LLM_PROVIDERS = ("bedrock", "anthropic")
 
 
@@ -54,7 +56,9 @@ class Settings:
     data_go_kr_key: str | None = _secret()
     data_go_kr_timeout: float = DEFAULT_API_TIMEOUT
     volunteer_1365_base_url: str | None = None
+    volunteer_1365_list_operation: str = DEFAULT_1365_LIST_OPERATION
     youth_volunteer_base_url: str | None = None
+    youth_volunteer_operation: str | None = None  # 확인 전(미해결 사항). 비어 있으면 청소년 API를 쓰지 않음
 
     # SMTP (비어 있으면 .eml 저장)
     smtp_host: str | None = None
@@ -161,7 +165,9 @@ def load_settings(
             "DATA_GO_KR_TIMEOUT", get("DATA_GO_KR_TIMEOUT"), DEFAULT_API_TIMEOUT
         ),
         volunteer_1365_base_url=get("VOLUNTEER_1365_BASE_URL"),
+        volunteer_1365_list_operation=get("VOLUNTEER_1365_LIST_OPERATION") or DEFAULT_1365_LIST_OPERATION,
         youth_volunteer_base_url=get("YOUTH_VOLUNTEER_BASE_URL"),
+        youth_volunteer_operation=get("YOUTH_VOLUNTEER_OPERATION"),
         smtp_host=get("SMTP_HOST"),
         smtp_port=_to_int("SMTP_PORT", get("SMTP_PORT")),
         smtp_user=get("SMTP_USER"),

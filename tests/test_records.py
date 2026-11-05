@@ -11,7 +11,7 @@ from volunteer_agent.records import (
 )
 
 TODAY = date(2026, 11, 4)
-ENV, LIFE, ETC = "0800", "0100", "9900"
+ENV, LIFE, ETC = "0800", "0100", "1500"
 
 
 @pytest.fixture
