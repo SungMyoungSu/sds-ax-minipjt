@@ -206,3 +206,17 @@ def test_log_activity_treats_none_text_as_missing(env):
     call("create_profile", user_type="employee")
     out = call("log_activity", date="2026-11-03", organization="None", hours=2, type_code="0800")
     assert "기관" in out and "활동 #" not in out
+
+
+def test_ingest_without_file_uses_default_policy(env, monkeypatch):
+    monkeypatch.setenv("DEFAULT_POLICY_FILE", str(FIX / "volunteer_policy.md"))
+    out = call("ingest_policy")
+    assert "volunteer_policy.md (조항 6개) (첨부 파일이 없어 기본 규정 파일을 썼습니다)" in out
+    monkeypatch.setenv("DEFAULT_POLICY_FILE", str(FIX / "없는파일.md"))
+    assert "규정 파일(.md 또는 텍스트 PDF)을 첨부해 주세요" in call("ingest_policy")
+
+
+def test_default_policy_splits_into_distinct_clauses(env):
+    out = call("ingest_policy")  # 저장소의 기본 규정(사회공헌_봉사활동_규정.md)
+    assert "사회공헌_봉사활동_규정.md (조항 28개)" in out
+    assert "[부칙 제1조]" in out and "[별지1]" in out

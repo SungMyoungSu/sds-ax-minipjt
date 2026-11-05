@@ -105,3 +105,14 @@ def test_secrets_hidden_from_repr_and_str():
         assert "fake-smtp-app-password" not in text
         assert "us-east-1" in text  # 비밀이 아닌 값은 보임
     assert set(s.secret_values()) == {FAKE_AWS_SECRET, FAKE_DATA_KEY, "fake-smtp-app-password"}
+
+
+def test_default_policy_file(tmp_path):
+    from volunteer_agent.config import DEFAULT_POLICY_FILE, PROJECT_ROOT
+
+    s = load_settings(env_file=None, environ={})
+    assert s.default_policy_file == DEFAULT_POLICY_FILE
+    assert DEFAULT_POLICY_FILE == PROJECT_ROOT / "data" / "policies" / "사회공헌_봉사활동_규정.md"
+    assert DEFAULT_POLICY_FILE.is_file()  # 저장소에 함께 커밋된 기본 규정
+    rel = load_settings(env_file=None, environ={"DEFAULT_POLICY_FILE": "eval/fixtures/volunteer_policy.md"})
+    assert rel.default_policy_file == (PROJECT_ROOT / "eval" / "fixtures" / "volunteer_policy.md").resolve()

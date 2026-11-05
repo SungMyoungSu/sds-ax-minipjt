@@ -133,7 +133,7 @@ v1은 본인과 지인이 Windows PC에서 쓰는 개인 도구입니다. PC 한
 |---|---|---|
 | 봉사 모집 정보 | data.go.kr 1365 봉사참여정보 API (15157582) | XML 형식. 사용자가 개인 서비스 키를 발급받아 씁니다. 목록 오퍼레이션은 설정값(`VOLUNTEER_1365_LIST_OPERATION`, 기본 `getVltrSearchWordList`), 타임아웃 10초. 학생 추천의 청소년 참여 가능 여부도 이 응답(`yngbgsPosblAt`)으로 거릅니다. 청소년 봉사 프로그램 API(15156325)는 지난 운영 이력만 주고 날짜·상태로 거를 수 없어 쓰지 않습니다 |
 | 활동 유형 코드 | 1365 분야 대분류 15개(코드표 파일, 2026-11-05 실제 응답으로 확인) | 사내규정의 인정 유형을 이 목록에 맞추고, 사용자가 확정합니다 |
-| 사내규정 | 사용자가 올린 `.md`나 텍스트 PDF | 로컬에만 둡니다. 조항 단위로 나눠 BM25 색인과 Chroma 벡터 색인(`DATA_DIR/chroma`)을 함께 만듭니다. 평가용 fixture는 `eval/fixtures/volunteer_policy.md`입니다 |
+| 사내규정 | 사용자가 올린 `.md`나 텍스트 PDF. 파일 없이 등록을 요청하면 기본 규정 `data/policies/사회공헌_봉사활동_규정.md`(가상 회사 규정, 저장소에 포함, `DEFAULT_POLICY_FILE`로 변경) | 로컬에만 둡니다. 조항(제N조, 부칙 제N조, 별지N) 단위로 나눠 BM25 색인과 Chroma 벡터 색인(`DATA_DIR/chroma`)을 함께 만듭니다. 평가용 fixture는 `eval/fixtures/volunteer_policy.md`입니다(시나리오·인-아웃 평가는 이 fixture 기준) |
 | 사용자 선호 | 사용자 발화 | LangGraph Store(로컬 SQLite)에 저장하고, `purge`하면 같이 지웁니다 |
 | 활동 기록과 확인서 | 사용자 입력과 첨부 파일 | SQLite와 `DATA_DIR`에 저장합니다 |
 

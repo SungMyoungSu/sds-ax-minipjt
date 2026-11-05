@@ -16,6 +16,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dotenv import dotenv_values
 
 DEFAULT_DATA_DIR = "data"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# 파일 없이 "회사 규정 등록해줘"라고 하면 쓰는 기본 사내규정(DEFAULT_POLICY_FILE로 바꿀 수 있다)
+DEFAULT_POLICY_FILE = PROJECT_ROOT / "data" / "policies" / "사회공헌_봉사활동_규정.md"
 DEFAULT_TIMEZONE = "Asia/Seoul"
 DEFAULT_API_TIMEOUT = 10.0
 DEFAULT_LOG_LEVEL = "INFO"
@@ -23,6 +26,14 @@ DEFAULT_LLM_PROVIDER = "bedrock"
 # 1365 봉사참여정보 목록 조회 오퍼레이션(2026-11-05 실제 호출로 확인). VOLUNTEER_1365_LIST_OPERATION으로 바꿀 수 있다.
 DEFAULT_1365_LIST_OPERATION = "getVltrSearchWordList"
 LLM_PROVIDERS = ("bedrock", "anthropic")
+
+
+def _policy_path(value: str | None) -> Path:
+    """기본 규정 파일 경로. 상대 경로는 프로젝트 폴더 기준."""
+    if not value:
+        return DEFAULT_POLICY_FILE
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else (PROJECT_ROOT / path).resolve()
 
 
 class ConfigError(ValueError):
@@ -57,6 +68,9 @@ class Settings:
     data_go_kr_timeout: float = DEFAULT_API_TIMEOUT
     volunteer_1365_base_url: str | None = None
     volunteer_1365_list_operation: str = DEFAULT_1365_LIST_OPERATION
+
+    # 사내규정
+    default_policy_file: Path | None = DEFAULT_POLICY_FILE
 
     # SMTP (비어 있으면 .eml 저장)
     smtp_host: str | None = None
@@ -164,6 +178,7 @@ def load_settings(
         ),
         volunteer_1365_base_url=get("VOLUNTEER_1365_BASE_URL"),
         volunteer_1365_list_operation=get("VOLUNTEER_1365_LIST_OPERATION") or DEFAULT_1365_LIST_OPERATION,
+        default_policy_file=_policy_path(get("DEFAULT_POLICY_FILE")),
         smtp_host=get("SMTP_HOST"),
         smtp_port=_to_int("SMTP_PORT", get("SMTP_PORT")),
         smtp_user=get("SMTP_USER"),

@@ -18,7 +18,11 @@ build/
 dist/
 
 # ===== 로컬 데이터 (개인정보·확인서·DB) =====
-data/
+data/*
+# 기본 사내규정(가상 회사 규정, 공개 가능)만 커밋한다. 다른 규정 파일은 올리지 않는다.
+!data/policies/
+data/policies/*
+!data/policies/사회공헌_봉사활동_규정.md
 *.sqlite
 *.sqlite3
 *.db
