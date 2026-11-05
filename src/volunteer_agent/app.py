@@ -143,6 +143,7 @@ class Turn:
     messages: list[Any]
     agents: list[str]
     tools: list[str]
+    refusal: str | None = None  # 입력 가드레일이 막은 범주(이때 Supervisor는 호출되지 않음)
 
 
 class ToolRecorder(BaseCallbackHandler):
@@ -162,8 +163,15 @@ class ToolRecorder(BaseCallbackHandler):
             self.names.append(name)
 
 
-async def ask(app: Any, text: str, thread_id: str, callbacks: list | None = None) -> Turn:
-    """질문 하나를 thread_id 대화로 실행하고, 이번 턴에서 거친 Agent와 부른 도구를 함께 돌려준다."""
+async def ask(app: Any, text: str, thread_id: str, callbacks: list | None = None, guard: Any | None = None) -> Turn:
+    """질문 하나를 thread_id 대화로 실행하고, 이번 턴에서 거친 Agent와 부른 도구를 함께 돌려준다.
+
+    guard(입력 가드레일)가 있으면 Supervisor보다 먼저 검사하고, 막히면 고정 거절 문구 하나만 돌려준다.
+    """
+    if guard is not None:
+        checked = await guard.check(text)
+        if checked.blocked:
+            return Turn(answer=checked.message, messages=[], agents=[], tools=[], refusal=checked.category)
     recorder = ToolRecorder()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT,
               "callbacks": [recorder, *(callbacks or [])]}
