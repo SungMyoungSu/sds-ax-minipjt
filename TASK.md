@@ -29,7 +29,7 @@
 - **완료 조건:** `uv sync`, `uv run pytest` 통과. 관련 AC13(일부), AC8(일부)
 - **참고:** `reference/README.txt`(환경 준비), `.env.example`
 
-### [ ] 2. 저장소와 데이터 모델
+### [x] 2. 저장소와 데이터 모델
 - **만들 것:** SQLite 스키마와 접근 계층. 사용자 설정(`user_type`), 기준 프로필, 활동(`school_planned` 포함), 규칙 후보와 확정 규칙, 마감, 관심 목록. 1365 분야 코드표 파일(출처와 기준일 표기) PRD 반영: 활동별·프로필별 상태 4종(인정, 확인서 대기, 제외, 규칙 미확정), 전환 시 회사 집계 포함 여부(`include_in_company`), 기록 당시 유형(`recorded_as`), 계획(주차·후보·승인 여부·승인 시각), 알림 발송·`.eml` 저장 기록
 - **테스트:** 테이블 생성, CRUD, 사용자 설정을 한 번만 저장하는지, 코드표 로드
 - **완료 조건:** 명세의 개체(Profile, Activity, RuleCandidate, Deadline, WatchlistItem, UserSetting, ActivityTypeCode)가 모두 저장되고 조회됨
