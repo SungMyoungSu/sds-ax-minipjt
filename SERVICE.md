@@ -98,8 +98,8 @@ v1은 본인과 지인이 Windows PC에서 쓰는 개인 도구입니다. PC 한
 | 구조화 출력 | Pydantic + `with_structured_output`. 가드레일 판별, 계획(Plan·Replan), 규칙 후보(RuleCandidate)에 씁니다. |
 | 대화 상태 | LangGraph checkpointer로 `thread_id` 단위 멀티턴 기억을 둡니다. CLI 한 번 실행과 Streamlit 세션 하나가 각각 thread 하나입니다. |
 | 사용자 설정 | PC당 1명. 처음 실행할 때 `user_type`(회사원·학생)을 저장합니다. |
-| 데이터 관리 | `volunteer-agent export`(zip 내보내기), `volunteer-agent purge`(확인 문구를 입력해야 삭제) |
-| CLI | `chat`(대화형), `--once`(한 번), `scenario`(시나리오 평가). 공통 옵션 `--user-type`, `--today`, `--show-trace`, `--api-mode fixture\|live` |
+| 데이터 관리 | `volunteer-agent export`(zip 내보내기, `DATA_DIR/exports/`), `volunteer-agent purge`(확인 문구 `내 데이터 모두 삭제`를 정확히 입력해야 삭제) |
+| CLI | `chat`(대화형, `/첨부 파일 메시지`로 파일 첨부), `--once`(한 번, `--attach 파일`), `scenario`(시나리오 평가), `notify`(마감 점검 1회, 작업 스케줄러용). 공통 옵션 `--user-type`, `--today`, `--show-trace`, `--api-mode fixture\|live`. 시작할 때 7일 이내 마감을 안내하고, 실행마다 `trace.jsonl`을 남깁니다 |
 | 도구 서버 | fastmcp stdio MCP 서버. 결정적 코드이며, docstring에 언제 쓰고 언제 쓰지 않는지를 함께 적습니다. |
 | 저장소 | SQLite, `DATA_DIR`(확인서 사본, PDF, `.ics`) |
 | 스케줄러 | Windows 작업 스케줄러가 하루 한 번 돌립니다. 놓친 실행은 다음에 켤 때 돌립니다. |

@@ -87,6 +87,7 @@ uv run volunteer-agent --once "질문"       # CLI 한 번 실행
 uv run streamlit run app.py               # 로컬 화면 (보조)
 uv run volunteer-agent export             # DATA_DIR zip 내보내기
 uv run volunteer-agent purge              # DATA_DIR 삭제 (확인 문구 필요)
+uv run volunteer-agent notify             # 마감 알림 점검 1회 (Windows 작업 스케줄러용)
 ```
 
 ## 완료 기준 (DoD)

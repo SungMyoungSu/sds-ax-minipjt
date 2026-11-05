@@ -137,7 +137,7 @@
 
 ## M5. CLI와 평가
 
-### [ ] 16. CLI
+### [x] 16. CLI
 - **만들 것:** `volunteer-agent chat`(대화형, 실행 1회 = 대화 1개), `--once`, 공통 옵션 `--user-type`, `--today`, `--show-trace`, `--api-mode fixture|live`, 첫 실행 시 회사원/학생 질문, `export`(zip), `purge`(확인 문구), 시작할 때 임박한 마감 안내
 - **테스트:** AC12(CLI 부분), AC13(사용자 부분), AC15
 - **완료 조건:** AC12(CLI), AC13, AC15 통과
