@@ -220,6 +220,8 @@ class PolicyHit:
 class PolicySearchResult:
     status: Literal["found", "no_evidence", "no_documents"]
     hits: list[PolicyHit] = field(default_factory=list)
+    mode: Literal["bm25", "hybrid"] = "bm25"
+    fallback_reason: str | None = None  # 하이브리드를 시도했다가 BM25만 쓴 이유(마스킹됨)
 
     @property
     def message(self) -> str:
@@ -230,31 +232,52 @@ class PolicySearchResult:
         return "\n\n".join(f"[출처: {h.citation}]\n{h.text}" for h in self.hits)
 
 
-def search_policy(store: Store, query: str, top_k: int = 3) -> PolicySearchResult:
-    """등록된 규정에서 질문과 관련된 조항을 원문 그대로 찾는다.
+@dataclass
+class ClauseEntry:
+    filename: str
+    clause: PolicyClause
 
-    질문에 핵심어가 있는데 그중 어느 것도 규정 원문에 없으면 근거 없음으로 본다
-    (예: "헌혈도 봉사시간으로 인정돼?" → '헌혈'이 원문에 없음).
-    """
-    docs = store.list_policy_documents()
-    entries = [(d.filename, c) for d in docs for c in d.clauses if c.clause_id != "머리말"]
+
+def load_entries(store: Store) -> list[ClauseEntry]:
+    """검색 대상 조항(제목 줄 '머리말' 제외)."""
+    return [
+        ClauseEntry(d.filename, c)
+        for d in store.list_policy_documents() for c in d.clauses if c.clause_id != "머리말"
+    ]
+
+
+def has_evidence_terms(query: str, entries: list[ClauseEntry]) -> bool:
+    """질문에 핵심어가 있는데 그중 어느 것도 규정 원문에 없으면 False(근거 없음).
+    예: "헌혈도 봉사시간으로 인정돼?" → '헌혈'이 원문에 없음."""
+    keys = key_terms(query)
+    if not keys:
+        return True
+    vocabulary = {t for e in entries for t in tokenize(e.clause.text)}
+    raw_text = "\n".join(e.clause.text for e in entries)
+    return any(k in vocabulary or k in raw_text for k in keys)
+
+
+def bm25_ranking(query: str, entries: list[ClauseEntry]) -> list[tuple[int, float]]:
+    """(entries 위치, 점수)를 점수 높은 순으로. 점수 0은 뺀다."""
+    scores = BM25([tokenize(e.clause.text) for e in entries]).scores(tokenize(query))
+    ranked = sorted(range(len(entries)), key=lambda i: scores[i], reverse=True)
+    return [(i, scores[i]) for i in ranked if scores[i] > 0]
+
+
+def make_hit(entry: ClauseEntry, score: float) -> PolicyHit:
+    c = entry.clause
+    return PolicyHit(filename=entry.filename, clause_id=c.clause_id, text=c.text,
+                     score=round(score, 4), page=c.page)
+
+
+def search_policy(store: Store, query: str, top_k: int = 3) -> PolicySearchResult:
+    """BM25만으로 검색한다. 하이브리드 검색은 rag.PolicyRetriever를 쓴다."""
+    entries = load_entries(store)
     if not entries:
         return PolicySearchResult(status="no_documents")
-
-    corpus_terms = [tokenize(c.text) for _, c in entries]
-    vocabulary = {t for terms in corpus_terms for t in terms}
-    raw_text = "\n".join(c.text for _, c in entries)
-    keys = key_terms(query)
-    if keys and not any(k in vocabulary or k in raw_text for k in keys):
+    if not has_evidence_terms(query, entries):
         return PolicySearchResult(status="no_evidence")
-
-    scores = BM25(corpus_terms).scores(tokenize(query))
-    ranked = sorted(range(len(entries)), key=lambda i: scores[i], reverse=True)
-    hits = [
-        PolicyHit(filename=entries[i][0], clause_id=entries[i][1].clause_id, text=entries[i][1].text,
-                  score=round(scores[i], 4), page=entries[i][1].page)
-        for i in ranked[:top_k] if scores[i] > 0
-    ]
+    hits = [make_hit(entries[i], s) for i, s in bm25_ranking(query, entries)[:top_k]]
     if not hits:
         return PolicySearchResult(status="no_evidence")
     return PolicySearchResult(status="found", hits=hits)
