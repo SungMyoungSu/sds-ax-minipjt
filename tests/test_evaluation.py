@@ -210,7 +210,7 @@ def test_run_eval_stops_on_quota(settings):
     original = fake.models["supervisor"].handler
 
     def throttled(messages):
-        if any("남았어" in str(getattr(m, "content", "")) for m in messages):
+        if any(getattr(m, "type", "") == "human" and "남았어" in str(m.content) for m in messages):
             raise ThrottlingException("Too many tokens per day")
         return original(messages)
 

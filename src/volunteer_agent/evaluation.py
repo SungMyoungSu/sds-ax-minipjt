@@ -39,6 +39,10 @@ KNOWN_TYPES = DOC_TYPES | TOOL_TYPES | AGENT_TYPES | SAFETY_TYPES | {"no_answer"
 REQUIRED_TYPES = KNOWN_TYPES  # AC11: 모든 type이 1개 이상(guardrail은 차단·통과 각 1개 이상)
 MIN_CASES = 12
 
+# 기본 사내규정(data/policies)에는 연 의무 시간 조항이 없어, 평가 출발 상태는 사용자가 목표 16시간으로 정해 확정한 것으로 둔다.
+DEFAULT_POLICY_GOAL = 16
+DEFAULT_POLICY_CERT_QUOTE = "확인서를 첨부하여 실적 등록을 신청한다"
+
 POLICY_DRAFT = {
     "goal_hours": 8,
     "goal_quote": "임직원은 매년 1월 1일부터 12월 31일까지 연 8시간 이상 봉사활동에 참여하여야 한다.",
@@ -56,12 +60,13 @@ def seed(settings: Settings, kind: str, today: date) -> None:
 
     employee_confirmed: 회사원, 규정 등록 + 규칙 확정(연 8시간, 1/1~12/31, 환경·사회복지, 확인서 필수)
     employee_new: 회사원, 아무 데이터 없음(규정 업로드부터)
+    default_confirmed: 회사원, 기본 규정 등록 + 규칙 확정(목표 16시간은 사용자 지정, 1/1~12/31, 분야 제한 없음, 확인서 필수)
     student: 학생, 간호학 희망, 학기 목표 10시간(3/2~7/18), 선호 지역 서울
     """
     from volunteer_agent.memory import open_store, save_preferences
     from volunteer_agent.policy import ingest_policy
     from volunteer_agent.records import RecordService
-    from volunteer_agent.rules import RuleDraft, confirm_rules, propose_rules
+    from volunteer_agent.rules import RuleDraft, RuleEdits, confirm_rules, propose_rules
     from volunteer_agent.store import Store
 
     settings.ensure_data_dir()
@@ -72,6 +77,12 @@ def seed(settings: Settings, kind: str, today: date) -> None:
                 ingest_policy(store, POLICY_FIXTURE)
                 propose_rules(store, RuleDraft(**POLICY_DRAFT), today)
                 confirm_rules(store, settings, today, "응, 확정해")
+        elif kind == "default_confirmed":
+            store.init_user_setting("employee")
+            ingest_policy(store, settings.default_policy_file)
+            draft = RuleDraft(certificate_required=True, certificate_quote=DEFAULT_POLICY_CERT_QUOTE)
+            propose_rules(store, draft, today)
+            confirm_rules(store, settings, today, "응, 확정해", edits=RuleEdits(goal_hours=DEFAULT_POLICY_GOAL))
         elif kind == "student":
             store.init_user_setting("student")
             RecordService(store, settings, today).create_profile(
@@ -128,7 +139,8 @@ class Session:
                 self.trace_copy = target
             shutil.rmtree(self.dir, ignore_errors=True)
 
-    async def ask(self, text: str, thread: str | None = None, mark: dict | None = None) -> Asked:
+    async def ask(self, text: str, thread: str | None = None, mark: dict | None = None,
+                  callbacks: list | None = None) -> Asked:
         from volunteer_agent.app import ask
 
         self.count += 1
@@ -138,7 +150,7 @@ class Session:
             tracer.write("case", **mark)
         before = len(read_trace(trace_path(self.settings)))
         started = datetime.now()
-        turn = await ask(self.app, text, thread, guard=self.guard, tracer=tracer)
+        turn = await ask(self.app, text, thread, callbacks=callbacks, guard=self.guard, tracer=tracer)
         events = read_trace(trace_path(self.settings))[before:]
         agents = [e["target"] for e in events if e["event"] == "handoff" and str(e.get("target")).endswith("_agent")]
         tools = [e["tool"] for e in events if e["event"] == "tool_start" and e.get("tool")
