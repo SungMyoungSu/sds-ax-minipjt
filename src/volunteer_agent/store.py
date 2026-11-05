@@ -90,8 +90,6 @@ CREATE TABLE IF NOT EXISTS activities(
   major_relevance TEXT,
   lesson TEXT,
   school_planned INTEGER NOT NULL DEFAULT 0,
-  recorded_as TEXT NOT NULL CHECK(recorded_as IN ('employee','student')),
-  include_in_company INTEGER,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -217,21 +215,14 @@ class Store:
         return UserSetting(user_type=row["user_type"], created_at=_pdt(row["created_at"]))
 
     def init_user_setting(self, user_type: str) -> UserSetting:
-        """처음 실행할 때 한 번만 저장한다. 유형 전환은 이 함수를 쓰지 않는다."""
+        """처음 실행할 때 한 번만 저장한다. 유형은 이후 바꾸지 않는다."""
         if self.get_user_setting() is not None:
-            raise StoreError("사용자 설정이 이미 있습니다. 유형을 바꾸려면 유형 전환을 사용하세요.")
+            raise StoreError("사용자 설정이 이미 있습니다.")
         self._insert(
             "INSERT INTO user_settings(id, user_type, created_at) VALUES (1, ?, ?)",
             (user_type, self._stamp()),
         )
         return self.get_user_setting()
-
-    def set_user_type(self, user_type: str) -> None:
-        """유형 전환용(3단계 switch_user_type에서 사용)."""
-        if self.get_user_setting() is None:
-            raise StoreError("사용자 설정이 없습니다.")
-        with self.conn:
-            self.conn.execute("UPDATE user_settings SET user_type = ? WHERE id = 1", (user_type,))
 
     # ---- 기준 프로필 ----
 
@@ -282,7 +273,7 @@ class Store:
         return self.get_profile(p.id)
 
     def end_profile(self, profile_id: int) -> Profile:
-        """전환·새 기간 때 프로필을 지우지 않고 끝난 것으로 표시한다."""
+        """프로필을 지우지 않고 끝난 것으로 표시한다(기록과 이력은 남김)."""
         self._require("profiles", profile_id)
         with self.conn:
             self.conn.execute(
@@ -392,8 +383,6 @@ class Store:
             major_relevance=row["major_relevance"],
             lesson=row["lesson"],
             school_planned=bool(row["school_planned"]),
-            recorded_as=row["recorded_as"],
-            include_in_company=_pb(row["include_in_company"]),
             created_at=_pdt(row["created_at"]),
             updated_at=_pdt(row["updated_at"]),
         )
@@ -402,11 +391,10 @@ class Store:
         stamp = self._stamp()
         a.id = self._insert(
             "INSERT INTO activities(start_date, end_date, organization, content, hours, type_code,"
-            " certificate_path, major_relevance, lesson, school_planned, recorded_as,"
-            " include_in_company, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " certificate_path, major_relevance, lesson, school_planned, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (_d(a.start_date), _d(a.end_date), a.organization, a.content, a.hours, a.type_code,
-             a.certificate_path, a.major_relevance, a.lesson, int(a.school_planned), a.recorded_as,
-             _b(a.include_in_company), stamp, stamp),
+             a.certificate_path, a.major_relevance, a.lesson, int(a.school_planned), stamp, stamp),
         )
         return self.get_activity(a.id)
 
@@ -423,10 +411,10 @@ class Store:
             self.conn.execute(
                 "UPDATE activities SET start_date=?, end_date=?, organization=?, content=?, hours=?,"
                 " type_code=?, certificate_path=?, major_relevance=?, lesson=?, school_planned=?,"
-                " recorded_as=?, include_in_company=?, updated_at=? WHERE id=?",
+                " updated_at=? WHERE id=?",
                 (_d(a.start_date), _d(a.end_date), a.organization, a.content, a.hours, a.type_code,
                  a.certificate_path, a.major_relevance, a.lesson, int(a.school_planned),
-                 a.recorded_as, _b(a.include_in_company), self._stamp(), a.id),
+                 self._stamp(), a.id),
             )
         return self.get_activity(a.id)
 

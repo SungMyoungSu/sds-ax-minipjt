@@ -1,6 +1,10 @@
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 import pytest
 
 from volunteer_agent.config import load_settings
+from volunteer_agent.store import Store
 
 # .env.example의 변수 이름. 테스트가 개발자 PC의 환경 변수나 .env에 영향을 받지 않게 지운다.
 ENV_NAMES = [
@@ -33,3 +37,28 @@ def settings(data_dir):
     s = load_settings(env_file=None)
     s.ensure_data_dir()
     return s
+
+
+class Clock:
+    """주입용 시계. tick()으로 시간을 앞으로 보낸다."""
+
+    def __init__(self):
+        self.t = datetime(2026, 11, 4, 9, 0, tzinfo=ZoneInfo("Asia/Seoul"))
+
+    def __call__(self):
+        return self.t
+
+    def tick(self, minutes=1):
+        self.t += timedelta(minutes=minutes)
+
+
+@pytest.fixture
+def clock():
+    return Clock()
+
+
+@pytest.fixture
+def store(settings, clock):
+    s = Store.open(settings, now=clock)
+    yield s
+    s.close()

@@ -91,7 +91,6 @@ class Activity:
     start_date: date
     hours: float
     type_code: str
-    recorded_as: UserType
     end_date: date | None = None
     organization: str | None = None
     content: str | None = None
@@ -99,7 +98,6 @@ class Activity:
     major_relevance: str | None = None
     lesson: str | None = None
     school_planned: bool = False
-    include_in_company: bool | None = None  # 학생→회사원 전환 시 사용자가 고른 기록만 True
     id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

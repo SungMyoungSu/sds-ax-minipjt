@@ -1,6 +1,5 @@
 import sqlite3
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date
 
 import pytest
 
@@ -17,34 +16,10 @@ from volunteer_agent.models import (
 )
 from volunteer_agent.store import DB_FILENAME, SCHEMA_VERSION, Store, StoreError
 
-KST = ZoneInfo("Asia/Seoul")
 TABLES = {
     "user_settings", "profiles", "policy_documents", "policy_clauses", "rule_candidates",
     "activities", "deadlines", "watchlist", "plans", "notifications",
 }
-
-
-class Clock:
-    def __init__(self):
-        self.t = datetime(2026, 11, 4, 9, 0, tzinfo=KST)
-
-    def __call__(self):
-        return self.t
-
-    def tick(self, minutes=1):
-        self.t += timedelta(minutes=minutes)
-
-
-@pytest.fixture
-def clock():
-    return Clock()
-
-
-@pytest.fixture
-def store(settings, clock):
-    s = Store.open(settings, now=clock)
-    yield s
-    s.close()
 
 
 def _profile(store):
@@ -77,14 +52,6 @@ def test_user_setting_saved_only_once(store, clock):
     with pytest.raises(StoreError):
         store.init_user_setting("employee")
     assert store.get_user_setting().user_type == "student"
-
-
-def test_set_user_type_for_switch(store):
-    with pytest.raises(StoreError):
-        store.set_user_type("employee")
-    store.init_user_setting("student")
-    store.set_user_type("employee")
-    assert store.get_user_setting().user_type == "employee"
 
 
 @pytest.mark.parametrize("bad", ["admin", "", "Employee"])
@@ -186,11 +153,11 @@ def test_rule_requires_existing_profile(store):
 
 def test_activity_crud(store, clock):
     a = store.add_activity(Activity(
-        start_date=date(2026, 11, 3), hours=2, type_code="0800", recorded_as="employee",
+        start_date=date(2026, 11, 3), hours=2, type_code="0800",
         organization="강남구 자원봉사센터", content="환경정화",
     ))
     assert a.id and a.created_at == a.updated_at == clock.t
-    assert a.include_in_company is None and a.school_planned is False
+    assert a.school_planned is False
 
     clock.tick()
     a.hours = 1.5
@@ -204,23 +171,13 @@ def test_activity_crud(store, clock):
 
 
 def test_activity_student_fields_and_order(store):
-    store.add_activity(Activity(start_date=date(2026, 3, 10), hours=3, type_code="0100",
-                                recorded_as="student", school_planned=True,
-                                major_relevance="간호학과 관련", lesson="경청",
-                                include_in_company=False))
-    store.add_activity(Activity(start_date=date(2026, 3, 5), hours=2, type_code="0100",
-                                recorded_as="student", include_in_company=True))
+    store.add_activity(Activity(start_date=date(2026, 3, 10), hours=3, type_code="0100", school_planned=True,
+                                major_relevance="간호학과 관련", lesson="경청"))
+    store.add_activity(Activity(start_date=date(2026, 3, 5), hours=2, type_code="0100"))
     acts = store.list_activities()
     assert [a.start_date for a in acts] == [date(2026, 3, 5), date(2026, 3, 10)]
-    assert acts[0].include_in_company is True
-    assert acts[1].include_in_company is False and acts[1].school_planned is True
+    assert acts[1].school_planned is True
     assert acts[1].lesson == "경청"
-
-
-def test_invalid_recorded_as_rejected(store):
-    with pytest.raises(sqlite3.IntegrityError):
-        store.add_activity(Activity(start_date=date(2026, 1, 1), hours=1, type_code="0100",
-                                    recorded_as="guest"))
 
 
 # ---- 마감, 관심 목록, 계획 ----

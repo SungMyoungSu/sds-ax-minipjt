@@ -1,6 +1,6 @@
 # TASK.md: 구현 계획
 
-> 설계는 끝났습니다(`SERVICE.md`, `SCENARIO.md`, `CLAUDE.md`, `PRD.md`, `seeds/volunteer-agent-v2.seed.yaml` 2.4.1).
+> 설계는 끝났습니다(`SERVICE.md`, `SCENARIO.md`, `CLAUDE.md`, `PRD.md`, `seeds/volunteer-agent-v2.seed.yaml` 2.5.0).
 > 이 문서는 **사용자와 함께 한 단계씩** 구현하기 위한 순서와 완료 조건입니다. 아직 구현은 시작하지 않았습니다.
 
 ## 진행 방식 (모든 단계 공통)
@@ -30,16 +30,16 @@
 - **참고:** `reference/README.txt`(환경 준비), `.env.example`
 
 ### [x] 2. 저장소와 데이터 모델
-- **만들 것:** SQLite 스키마와 접근 계층. 사용자 설정(`user_type`), 기준 프로필, 활동(`school_planned` 포함), 규칙 후보와 확정 규칙, 마감, 관심 목록. 1365 분야 코드표 파일(출처와 기준일 표기) PRD 반영: 활동별·프로필별 상태 4종(인정, 확인서 대기, 제외, 규칙 미확정), 전환 시 회사 집계 포함 여부(`include_in_company`), 기록 당시 유형(`recorded_as`), 계획(주차·후보·승인 여부·승인 시각), 알림 발송·`.eml` 저장 기록
+- **만들 것:** SQLite 스키마와 접근 계층. 사용자 설정(`user_type`), 기준 프로필, 활동(`school_planned` 포함), 규칙 후보와 확정 규칙, 마감, 관심 목록. 1365 분야 코드표 파일(출처와 기준일 표기) PRD 반영: 활동별·프로필별 상태 4종(인정, 확인서 대기, 제외, 규칙 미확정), 계획(주차·후보·승인 여부·승인 시각), 알림 발송·`.eml` 저장 기록
 - **테스트:** 테이블 생성, CRUD, 사용자 설정을 한 번만 저장하는지, 코드표 로드
 - **완료 조건:** 명세의 개체(Profile, Activity, RuleCandidate, Deadline, WatchlistItem, UserSetting, ActivityTypeCode)가 모두 저장되고 조회됨
 - **참고:** `reference/make_data.py`(데이터 준비 방식)
 
-### [ ] 3. 시간 집계 엔진
+### [x] 3. 시간 집계 엔진
 - **만들 것:** 프로필별 누적, 남은 시간, 증빙 대기 시간 계산. 여러 프로필에 동시 집계, 기준 기간 경계(시작일 기준), 기간 전환, 0.5시간 단위·음수·목록에 없는 유형 코드 거부, 활동 수정·삭제 후 다시 계산, 확인서를 나중에 붙이면 인정 시간으로 바뀜
 - **테스트:** AC3 (a)~(e), AC14 (a)~(d), AC5(입력 검증 부분), 회사원 시나리오의 시간 흐름(8 → 5.5 → 증빙 대기 2 → 1.5 → 4 → 새해 8)
-- **PRD 추가 기준:** 상태 4종(인정, 확인서 대기, 제외, 규칙 미확정), 비인정 분야·기간 밖 기록도 저장하고 집계에서만 제외, 미래 날짜·하루 24시간 초과는 입력 오류, 중복 기록은 확인 요청, 진행 현황 항목(회사원 4개, 목표 없는 학생 4개), 유형 전환 시 기록 유지와 회사 집계용 기록 선택 (PRD 16~23, 39)
-- **완료 조건:** AC3, AC14 (a)~(d), AC23, AC24 통과
+- **PRD 추가 기준:** 상태 4종(인정, 확인서 대기, 제외, 규칙 미확정), 비인정 분야·기간 밖 기록도 저장하고 집계에서만 제외, 미래 날짜·하루 24시간 초과는 입력 오류, 중복 기록은 확인 요청, 진행 현황 항목(회사원 4개, 목표 없는 학생 4개) (PRD 16~23)
+- **완료 조건:** AC3, AC14 (a)~(d), AC23 통과
 
 ---
 
@@ -138,12 +138,12 @@
 ## M5. CLI와 평가
 
 ### [ ] 16. CLI
-- **만들 것:** `volunteer-agent chat`(대화형, 실행 1회 = 대화 1개), `--once`, 공통 옵션 `--user-type`, `--today`, `--show-trace`, `--api-mode fixture|live`, 첫 실행 시 회사원/학생 질문, `export`(zip), `purge`(확인 문구), 시작할 때 임박한 마감 안내. 유형 전환과 학생 시절 기록 선택은 별도 명령 없이 대화(`chat`) 안에서 처리
+- **만들 것:** `volunteer-agent chat`(대화형, 실행 1회 = 대화 1개), `--once`, 공통 옵션 `--user-type`, `--today`, `--show-trace`, `--api-mode fixture|live`, 첫 실행 시 회사원/학생 질문, `export`(zip), `purge`(확인 문구), 시작할 때 임박한 마감 안내
 - **테스트:** AC12(CLI 부분), AC13(사용자 부분), AC15
 - **완료 조건:** AC12(CLI), AC13, AC15 통과
 
 ### [ ] 17. 시나리오 실행기
-- **만들 것:** `volunteer-agent scenario <파일|폴더>`. `eval/scenarios/README.md` 형식 해석, 시나리오 4개(employee, student, safety, transition)를 각각 빈 임시 `DATA_DIR`에서, 단계를 순서대로 이어서 실행, `new_thread`·`today`·`attach`·`run: scheduler` 처리, trace·답변·저장 상태로 판정, 단계별 PASS/FAIL과 이유, 하나라도 실패하면 종료 코드 1
+- **만들 것:** `volunteer-agent scenario <파일|폴더>`. `eval/scenarios/README.md` 형식 해석, 시나리오 4개(employee, student, safety, unconfirmed)를 각각 빈 임시 `DATA_DIR`에서, 단계를 순서대로 이어서 실행, `new_thread`·`today`·`attach`·`run: scheduler` 처리, trace·답변·저장 상태로 판정, 단계별 PASS/FAIL과 이유, 하나라도 실패하면 종료 코드 1
 - **fixture:** `eval/fixtures/certificate_sample.pdf`
 - **테스트:** AC16(가짜 LLM으로 PASS와 FAIL 경로 모두)
 - **완료 조건:** AC16(판정 로직) 통과
@@ -167,7 +167,7 @@
 - **할 것:**
   - master에서 `.env`를 적용해 실행
     - `uv run pytest`(실연동 포함)
-    - `uv run volunteer-agent scenario eval/scenarios/` → **63단계 전부 통과**
+    - `uv run volunteer-agent scenario eval/scenarios/` → **58단계 전부 통과**
     - `uv run python eval/run_eval.py` → **10/12 이상, 가드레일 전부 통과**
     - `uv run python eval/llm_judge.py` → **평균 4점 이상**
     - `uv run volunteer-agent check`
@@ -180,15 +180,15 @@
 ## 진행 현황
 | 마일스톤 | 단계 | 관련 수용 기준 | 상태 |
 |---|---|---|---|
-| M1 기반과 핵심 엔진 | 1~3 | AC3, AC5(일부), AC13(일부), AC14 (a)~(d), AC23, AC24 | 대기 |
+| M1 기반과 핵심 엔진 | 1~3 | AC3, AC5(일부), AC13(일부), AC14 (a)~(d), AC23 | 대기 |
 | M2 사내규정 | 4~6 | AC1, AC2, AC17, AC20 (c), AC22 | 대기 |
 | M3 외부 연동과 산출물 | 7~9 | AC4, AC5, AC6, AC7, AC14 (e), AC25(추천·알림) | 대기 |
 | M4 에이전트 | 10~15 | AC8, AC9, AC10, AC13, AC18, AC19, AC21, AC25(계획) | 대기 |
 | M5 CLI와 평가 | 16~19 | AC11, AC12, AC15, AC16, AC20 (a)(b) | 대기 |
-| M6 최종 검증 | 20 | 시나리오 63단계, 인-아웃 10/12, 심사 평균 4점 이상 | 대기 |
+| M6 최종 검증 | 20 | 시나리오 58단계, 인-아웃 10/12, 심사 평균 4점 이상 | 대기 |
 
 ## 미해결 사항
-- [x] PRD "Decide Later" 10개 항목: 2026-11-04 결정 완료(`SERVICE.md` 5장 "미결 사항 결정", `PRD.md` "Decisions")
+- [x] PRD "Decide Later" 8개 항목: 2026-11-04 결정 완료(`SERVICE.md` 5장 "미결 사항 결정", `PRD.md` "Decisions")
 - [ ] data.go.kr 두 API의 **오퍼레이션 경로**(7단계 실연동에 필요, 사용자가 확인 후 전달)
 - [ ] SMTP 정보(지금은 비워 둠. 이메일 실연동만 skip)
 - [ ] 이전 자동 수정 작업(Ralph)이 별도 작업 폴더에서 돌고 있음. 필요하면 중단
