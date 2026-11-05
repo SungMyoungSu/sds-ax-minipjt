@@ -26,7 +26,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.prebuilt import InjectedState
 from langgraph_supervisor import create_supervisor
 
-from agents import AGENT_TOOLS, PROGRESS_NOTE_PREFIX, build_agents, supervisor_prompt
+from agents import AGENT_TOOLS, PROGRESS_NOTE_PREFIX, ForcedToolChat, build_agents, supervisor_prompt
 from memory import memory_tools, open_store
 from config import Settings
 from llm import get_text, make_llm
@@ -86,46 +86,21 @@ def wire_tools(tools: list[BaseTool]) -> list[BaseTool]:
     return [bind_user_confirmation(t) if t.name == "confirm_rules" else t for t in tools]
 
 
-class RouteFirstChat(BaseChatModel):
+class RouteFirstChat(ForcedToolChat):
     """Supervisor 모델 감싸개. 턴 시작(마지막 메시지가 사용자 발화)에는 tool_choice="any"로 불러
     반드시 transfer_to_* 하나를 고르게 한다. 하위 Agent가 돌아온 뒤에는 보통대로 불러 빈 응답으로 끝낼 수 있다.
 
     Supervisor가 앞 대화 내용으로 직접 답해 담당 Agent·도구를 건너뛰는 일이 있었다(시나리오 S2-4).
     프롬프트 메모로 막으려 하니 메모를 새 요청으로 받아 오히려 직접 답해서(17/26), 모델 호출 옵션으로 강제한다."""
 
-    inner: Any
-
     @property
     def _llm_type(self) -> str:
         return "route-first"
 
-    def bind_tools(self, tools: Any, **kwargs: Any):
-        from langchain_core.utils.function_calling import convert_to_openai_tool
-
-        kwargs.pop("tool_choice", None)
-        return self.bind(tools=[convert_to_openai_tool(t) for t in tools], **kwargs)
-
-    def _pick(self, messages: list[Any], tools: list[dict] | None, kwargs: dict) -> Any:
-        if not tools:
-            return self.inner
+    def _force(self, messages: list[Any]) -> bool:
         last = messages[-1] if messages else None
         # 하위 Agent가 돌아온 뒤 붙는 진행 점검 메모(사람 메시지 형태)는 턴 시작이 아니다. 여기서 강제하면 끝낼 수 없다.
-        turn_start = isinstance(last, HumanMessage) and not get_text(last).startswith(PROGRESS_NOTE_PREFIX)
-        extra = {k: v for k, v in kwargs.items() if k in ("parallel_tool_calls",)}
-        return self.inner.bind_tools(tools, tool_choice="any", **extra) if turn_start \
-            else self.inner.bind_tools(tools, **extra)
-
-    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        from langchain_core.outputs import ChatGeneration, ChatResult
-
-        model = self._pick(messages, kwargs.pop("tools", None), kwargs)
-        return ChatResult(generations=[ChatGeneration(message=model.invoke(messages))])
-
-    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
-        from langchain_core.outputs import ChatGeneration, ChatResult
-
-        model = self._pick(messages, kwargs.pop("tools", None), kwargs)
-        return ChatResult(generations=[ChatGeneration(message=await model.ainvoke(messages))])
+        return isinstance(last, HumanMessage) and not get_text(last).startswith(PROGRESS_NOTE_PREFIX)
 
 
 def compile_app(llm_for: Callable[[str], Any], tools: list[BaseTool], clock: AppClock, checkpointer=None,

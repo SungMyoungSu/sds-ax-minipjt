@@ -10,6 +10,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any
 
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.prebuilt import create_react_agent
 
@@ -27,6 +28,61 @@ AGENT_TOOLS: dict[str, list[str]] = {
     "general_agent": [],
 }
 PYTHON_TOOLS = ("save_preference", "get_preferences")  # MCP 서버가 아닌 Python 도구
+
+# 요청을 받으면 반드시 자기 도구부터 부르는 Agent (Round 1: 13번 policy_agent가 검색 없이 '규정 범위 밖',
+# 16번 recommend_agent가 검색 없이 끝냄). record_agent는 넣지 않는다: 미래 날짜(입력 오류 안내)·날짜 누락(날짜만
+# 되묻기)은 도구 없이 답하는 것이 정답이고, 강제하면 오늘 날짜로 저장할 수 있다(인-아웃 12·15번).
+FORCE_FIRST_TOOL = ("policy_agent", "recommend_agent")
+
+
+class ForcedToolChat(BaseChatModel):
+    """채팅 모델 감싸개. `_force(messages)`가 참이면 tool_choice="any"로 불러 도구 호출을 강제하고,
+    아니면 보통대로 부른다. Supervisor(agent.RouteFirstChat)와 하위 Agent(FirstToolChat)가 함께 쓴다."""
+
+    inner: Any
+
+    @property
+    def _llm_type(self) -> str:
+        return "forced-tool"
+
+    def _force(self, messages: list[Any]) -> bool:
+        raise NotImplementedError
+
+    def bind_tools(self, tools: Any, **kwargs: Any):
+        from langchain_core.utils.function_calling import convert_to_openai_tool
+
+        kwargs.pop("tool_choice", None)
+        return self.bind(tools=[convert_to_openai_tool(t) for t in tools], **kwargs)
+
+    def _pick(self, messages: list[Any], tools: list[dict] | None, kwargs: dict) -> Any:
+        if not tools:
+            return self.inner
+        extra = {k: v for k, v in kwargs.items() if k in ("parallel_tool_calls",)}
+        return self.inner.bind_tools(tools, tool_choice="any", **extra) if self._force(messages) \
+            else self.inner.bind_tools(tools, **extra)
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        model = self._pick(messages, kwargs.pop("tools", None), kwargs)
+        return ChatResult(generations=[ChatGeneration(message=model.invoke(messages))])
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        model = self._pick(messages, kwargs.pop("tools", None), kwargs)
+        return ChatResult(generations=[ChatGeneration(message=await model.ainvoke(messages))])
+
+
+class FirstToolChat(ForcedToolChat):
+    """하위 Agent 모델 감싸개. 마지막 사용자 발화 뒤에 자기 도구 결과(ToolMessage)가 하나도 없으면 도구를 강제한다.
+    앞 Agent(예: record_agent의 get_progress) 결과는 세지 않으므로 두 번째로 넘겨받은 Agent도 강제된다."""
+
+    own_tools: frozenset[str]
+
+    def _force(self, messages: list[Any]) -> bool:
+        start = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1)
+        return not any(isinstance(m, ToolMessage) and m.name in self.own_tools for m in messages[start + 1:])
 
 COMMON_RULES = """[공통 규칙]
 - 오늘 날짜는 {today}({weekday})이다. '오늘', '어제', '지난주 토요일' 같은 표현은 이 날짜 기준 YYYY-MM-DD로 바꿔 도구에 넣는다.
@@ -215,5 +271,8 @@ def build_agents(llm_for: Callable[[str], Any], tools: list[Any], today_fn: Call
             continue
         def prompt(state: dict, _name: str = name) -> list:
             return [SystemMessage(system_prompt(_name, today_fn()))] + agent_view(state["messages"])
-        agents.append(create_react_agent(llm_for(name), tools_for(name, tools), prompt=prompt, name=name))
+        model = llm_for(name)
+        if name in FORCE_FIRST_TOOL:
+            model = FirstToolChat(inner=model, own_tools=frozenset(AGENT_TOOLS[name]))
+        agents.append(create_react_agent(model, tools_for(name, tools), prompt=prompt, name=name))
     return agents

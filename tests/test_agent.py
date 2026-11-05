@@ -369,3 +369,32 @@ def test_route_first_forces_handoff_only_at_turn_start(settings):
     t = asyncio.run(ask(app, "안녕", "t-route"))
     assert t.agents == ["general_agent"]
     assert sup.choices == ["any", None]  # 첫 호출만 강제
+
+
+def test_first_tool_chat_forces_until_own_tool_result():
+    """하위 Agent는 마지막 사용자 발화 뒤에 자기 도구 결과가 없으면 도구를 강제한다(Round 1 13·16번).
+    앞 Agent의 도구 결과는 세지 않는다(16번: record_agent get_progress 뒤 recommend_agent)."""
+    from langchain_core.messages import ToolMessage
+
+    from agents import FirstToolChat
+
+    rec = ChoiceRecorder(handler=lambda m: AIMessage(content="ok"), seen=[], choices=[])
+    chat = FirstToolChat(inner=rec, own_tools=frozenset(AGENT_TOOLS["recommend_agent"]))
+    tools = [{"type": "function", "function": {"name": "search_volunteer", "parameters": {}}}]
+    q = HumanMessage(content="남은 시간 확인하고 추천해줘")
+    prev = [q, call("get_progress"), ToolMessage(content="남은 16시간", name="get_progress", tool_call_id="call_get_progress_0"),
+            AIMessage(content="남은 시간은 16시간입니다.", name="record_agent")]
+    chat._pick(prev, tools, {})
+    chat._pick(prev + [call("search_volunteer"),
+                       ToolMessage(content="1건", name="search_volunteer", tool_call_id="call_search_volunteer_0")], tools, {})
+    # 다음 턴의 새 사용자 발화 뒤에는 다시 강제
+    chat._pick(prev + [ToolMessage(content="1건", name="search_volunteer", tool_call_id="x"), HumanMessage(content="더")],
+               tools, {})
+    assert rec.choices == ["any", None, "any"]
+
+
+def test_force_first_tool_agents_exclude_record_agent():
+    """record_agent는 강제하지 않는다: 미래 날짜·날짜 누락은 도구 없이 안내하는 것이 정답(인-아웃 12·15번)."""
+    from agents import FORCE_FIRST_TOOL
+
+    assert set(FORCE_FIRST_TOOL) == {"policy_agent", "recommend_agent"}
