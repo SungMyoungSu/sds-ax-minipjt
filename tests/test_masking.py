@@ -56,3 +56,9 @@ def test_short_or_empty_secrets_ignored():
 def test_already_masked_is_stable():
     once = mask_secrets("SMTP_PASSWORD=hunter22")
     assert mask_secrets(once) == once
+
+
+def test_keys_glued_to_korean_text_are_masked():
+    # \b는 한글을 단어 문자로 봐서 '가AKIA…'를 놓쳤다(trace 200자 요약에서 발견)
+    out = mask_secrets("키는AKIAFAKEFAKEFAKEFAKE입니다 sk-ant-abc123 그리고API_KEY=xyz789")
+    assert "AKIA" not in out and "sk-ant" not in out and "xyz789" not in out

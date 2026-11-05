@@ -103,7 +103,7 @@ v1은 본인과 지인이 Windows PC에서 쓰는 개인 도구입니다. PC 한
 | 도구 서버 | fastmcp stdio MCP 서버. 결정적 코드이며, docstring에 언제 쓰고 언제 쓰지 않는지를 함께 적습니다. |
 | 저장소 | SQLite, `DATA_DIR`(확인서 사본, PDF, `.ics`) |
 | 스케줄러 | Windows 작업 스케줄러가 하루 한 번 돌립니다. 놓친 실행은 다음에 켤 때 돌립니다. |
-| 관측 | `FileTracer` 방식 JSONL. 이벤트, 도구, 입출력 200자 요약, 지연시간, 토큰 수를 남깁니다. |
+| 관측 | `FileTracer` 방식 JSONL(`DATA_DIR/trace.jsonl`). 이벤트, 도구, 실행 Agent, 입출력 200자 요약(마스킹 후 자름), 지연시간, 토큰 수를 남깁니다. 이벤트는 `turn_start`/`turn_end`, `guard_block`, `llm_*`, `tool_*`, `handoff`(Agent 이동), `embedding_fallback`(MCP 서버가 기록)입니다. |
 | 비밀 정보 | `.env`만 씁니다(`.env.example` 참고). `.gitignore`로 커밋에서 뺍니다. |
 
 ### Agent별 MCP 도구

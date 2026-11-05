@@ -10,18 +10,19 @@ from collections.abc import Iterable
 
 MASK = "***"
 
-# 설정에 값이 없어도 형태만으로 가리는 패턴
+# 설정에 값이 없어도 형태만으로 가리는 패턴.
+# 경계는  대신 ASCII 기준으로 본다(는 한글도 단어 문자로 봐서 '가AKIA…'처럼 붙은 키를 놓친다).
 _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # AWS 액세스 키 ID (장기 AKIA, 임시 ASIA)
-    (re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), MASK),
+    (re.compile(r"(?<![0-9A-Za-z])(?:AKIA|ASIA)[0-9A-Z]{16}(?![0-9A-Za-z])"), MASK),
     # Anthropic API 키
-    (re.compile(r"\bsk-ant-[A-Za-z0-9_\-]+"), MASK),
+    (re.compile(r"(?<![0-9A-Za-z])sk-ant-[A-Za-z0-9_\-]+"), MASK),
     # data.go.kr 서비스 키 쿼리 파라미터
     (re.compile(r"(?i)(serviceKey=)[^&\s\"']+"), rf"\g<1>{MASK}"),
     # KEY/SECRET/TOKEN/PASSWORD가 들어간 이름의 `이름=값`, `이름: 값`
     (
         re.compile(
-            r"(?i)\b([A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)[A-Z0-9_]*\s*[=:]\s*)"
+            r"(?i)(?<![A-Za-z0-9_])([A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)[A-Z0-9_]*\s*[=:]\s*)"
             r"(?![\s\"']*\*\*\*)[\"']?[^\s\"',&]+[\"']?"
         ),
         rf"\g<1>{MASK}",

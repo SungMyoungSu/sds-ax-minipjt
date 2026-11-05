@@ -48,6 +48,7 @@ from volunteer_agent.rules import confirm_rules as _confirm
 from volunteer_agent.rules import is_explicit_confirmation
 from volunteer_agent.rules import propose_rules as _propose
 from volunteer_agent.store import Store, StoreError
+from volunteer_agent.tracing import append_event, trace_path
 from volunteer_agent.type_codes import load_type_codes
 
 logger = logging.getLogger("volunteer_agent.mcp")
@@ -162,6 +163,15 @@ def _progress_text(progress: list[Progress]) -> str:
 
 # ---- policy_agent 도구 ----
 
+def trace_retriever_events(settings: Settings, tool: str, retriever: PolicyRetriever) -> None:
+    """임베딩 실패(BM25 fallback)를 같은 DATA_DIR/trace.jsonl에 남긴다(AC17). 기록 실패는 도구 결과에 영향 없음."""
+    for event in retriever.events:
+        try:
+            append_event(trace_path(settings), {**event, "tool": tool}, settings.secret_values())
+        except OSError:
+            pass
+
+
 @mcp.tool()
 @safe
 def ingest_policy(file_path: str) -> str:
@@ -177,7 +187,9 @@ def ingest_policy(file_path: str) -> str:
     ctx = context()
     with ctx.store() as store:
         doc = _ingest(store, file_path)
-        index_note = PolicyRetriever(store, ctx.settings, make_embeddings(ctx.settings)).index()
+        retriever = PolicyRetriever(store, ctx.settings, make_embeddings(ctx.settings))
+        index_note = retriever.index()
+    trace_retriever_events(ctx.settings, "ingest_policy", retriever)
     body = "\n\n".join(f"[{c.clause_id}{f', {c.page}쪽' if c.page else ''}]\n{c.text}" for c in doc.clauses)
     note = "" if index_note is None else f"\n(벡터 색인은 건너뜀: {index_note}. 검색은 BM25로 동작합니다)"
     return (f"규정을 등록했습니다: {doc.filename} (조항 {len(doc.clauses)}개).{note}\n"
@@ -199,7 +211,9 @@ def search_policy(query: str) -> str:
     """
     ctx = context()
     with ctx.store() as store:
-        result = PolicyRetriever(store, ctx.settings, make_embeddings(ctx.settings)).search(query)
+        retriever = PolicyRetriever(store, ctx.settings, make_embeddings(ctx.settings))
+        result = retriever.search(query)
+    trace_retriever_events(ctx.settings, "search_policy", retriever)
     return result.message
 
 

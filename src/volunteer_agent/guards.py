@@ -150,12 +150,12 @@ class InputGuard:
         with self.audit_path().open("a", encoding="utf-8") as f:
             f.write(mask_secrets(line, self.settings.secret_values()) + "\n")
 
-    async def check(self, text: str) -> GuardResult:
+    async def check(self, text: str, callbacks: list | None = None) -> GuardResult:
         result = rule_check(text)
         if not result.blocked and self.llm is not None:
             try:
                 judged: InjectionCheck = await self.llm.with_structured_output(InjectionCheck).ainvoke(
-                    LLM_PROMPT.format(text=text))
+                    LLM_PROMPT.format(text=text), config={"callbacks": callbacks, "tags": ["input_guard"]} if callbacks else None)
                 if judged.category in LLM_BLOCKABLE and judged.confidence > LLM_THRESHOLD:
                     result = GuardResult(True, judged.category, "llm", f"{judged.reason} (확신도 {judged.confidence:.2f})")
             except Exception as e:  # noqa: BLE001 - LLM 판별 실패 시 규칙 결과만 사용

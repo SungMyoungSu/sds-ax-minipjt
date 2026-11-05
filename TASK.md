@@ -127,7 +127,7 @@
 - **완료 조건:** AC9, AC21 통과
 - **참고:** `reference/guards_input.py`, `reference/guards_refusal.py`
 
-### [ ] 15. 실행 추적
+### [x] 15. 실행 추적
 - **만들 것:** `FileTracer` 방식 콜백(llm_start/llm_end/tool_start/tool_end, 도구 이름, 입출력 200자 요약, 지연시간, 토큰 수), 마스킹 적용, Agent 이동(`transfer_to_*`) 기록
 - **테스트:** AC10, trace에 비밀 값이 없는지(AC8)
 - **완료 조건:** AC10 통과

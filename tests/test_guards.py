@@ -96,7 +96,7 @@ class FakeJudge:
         outer = self
 
         class Runner:
-            async def ainvoke(self, prompt):
+            async def ainvoke(self, prompt, config=None):
                 outer.calls += 1
                 if outer.error:
                     raise outer.error

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -163,20 +164,36 @@ class ToolRecorder(BaseCallbackHandler):
             self.names.append(name)
 
 
-async def ask(app: Any, text: str, thread_id: str, callbacks: list | None = None, guard: Any | None = None) -> Turn:
+async def ask(app: Any, text: str, thread_id: str, callbacks: list | None = None, guard: Any | None = None,
+              tracer: Any | None = None) -> Turn:
     """질문 하나를 thread_id 대화로 실행하고, 이번 턴에서 거친 Agent와 부른 도구를 함께 돌려준다.
 
     guard(입력 가드레일)가 있으면 Supervisor보다 먼저 검사하고, 막히면 고정 거절 문구 하나만 돌려준다.
+    tracer(FileTracer)가 있으면 질문 단위 이벤트(turn_start/guard_block/turn_end)와 모든 LLM·도구 호출을 남긴다.
     """
+    started = time.perf_counter()
+    callbacks = [*(callbacks or []), *([tracer] if tracer is not None else [])]
+    if tracer is not None:
+        tracer.write("turn_start", thread_id=thread_id, input=tracer._sum(text))
     if guard is not None:
-        checked = await guard.check(text)
+        checked = await guard.check(text, callbacks=callbacks or None)
         if checked.blocked:
-            return Turn(answer=checked.message, messages=[], agents=[], tools=[], refusal=checked.category)
+            turn = Turn(answer=checked.message, messages=[], agents=[], tools=[], refusal=checked.category)
+            if tracer is not None:
+                tracer.write("guard_block", thread_id=thread_id, category=checked.category, layer=checked.layer)
+                _trace_turn_end(tracer, thread_id, turn, started)
+            return turn
     recorder = ToolRecorder()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT,
-              "callbacks": [recorder, *(callbacks or [])]}
+              "callbacks": [recorder, *callbacks]}
     before = len((await app.aget_state(config)).values.get("messages", [])) if app.checkpointer else 0
-    result = await app.ainvoke({"messages": [HumanMessage(content=text)]}, config=config)
+    try:
+        result = await app.ainvoke({"messages": [HumanMessage(content=text)]}, config=config)
+    except Exception as exc:
+        if tracer is not None:
+            tracer.write("turn_error", thread_id=thread_id, error=tracer._sum(f"{type(exc).__name__}: {exc}"),
+                         latency_s=round(time.perf_counter() - started, 3))
+        raise
     new = result["messages"][before:]
     agents = []
     for m in new:
@@ -184,7 +201,15 @@ async def ask(app: Any, text: str, thread_id: str, callbacks: list | None = None
             agent = tc["name"].removeprefix("transfer_to_")
             if tc["name"].startswith("transfer_to_") and agent in AGENT_TOOLS and agent not in agents:
                 agents.append(agent)
-    return Turn(answer=final_answer(new), messages=new, agents=agents, tools=recorder.names)
+    turn = Turn(answer=final_answer(new), messages=new, agents=agents, tools=recorder.names)
+    if tracer is not None:
+        _trace_turn_end(tracer, thread_id, turn, started)
+    return turn
+
+
+def _trace_turn_end(tracer: Any, thread_id: str, turn: Turn, started: float) -> None:
+    tracer.write("turn_end", thread_id=thread_id, agents=turn.agents, tools=turn.tools, refusal=turn.refusal,
+                 output=tracer._sum(turn.answer), latency_s=round(time.perf_counter() - started, 3))
 
 
 def final_answer(messages: list[Any]) -> str:
