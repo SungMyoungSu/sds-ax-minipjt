@@ -27,11 +27,13 @@ class FakeRuntime:
             self.models[role] = ScriptedChat(handler=general_handler, seen=[])
         self.stubs = StubTools()
         self.opened = []
+        self.data_dirs = []
 
     def runtime(self) -> Runtime:
         @asynccontextmanager
         async def open_app(settings, clock, api_mode):
             self.opened.append((clock.today(), api_mode))
+            self.data_dirs.append(settings.data_dir)
             yield compile_app(lambda r: self.models[r], self.stubs.mcp(), clock, store=InMemoryStore())
 
         return Runtime(open_app=open_app, make_guard=lambda s: InputGuard(s))

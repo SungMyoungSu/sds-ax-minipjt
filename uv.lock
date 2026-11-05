@@ -3389,6 +3389,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pypdf" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
     { name = "reportlab" },
     { name = "tzdata" },
 ]
@@ -3413,6 +3414,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.14.2" },
     { name = "pypdf", specifier = ">=6.21.4" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pyyaml", specifier = ">=6" },
     { name = "reportlab", specifier = ">=5.1.0" },
     { name = "tzdata", specifier = ">=2024.1" },
 ]

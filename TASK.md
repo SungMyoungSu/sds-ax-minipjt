@@ -142,7 +142,7 @@
 - **테스트:** AC12(CLI 부분), AC13(사용자 부분), AC15
 - **완료 조건:** AC12(CLI), AC13, AC15 통과
 
-### [ ] 17. 시나리오 실행기
+### [x] 17. 시나리오 실행기
 - **만들 것:** `volunteer-agent scenario <파일|폴더>`. `eval/scenarios/README.md` 형식 해석, 시나리오 4개(employee, student, safety, unconfirmed)를 각각 빈 임시 `DATA_DIR`에서, 단계를 순서대로 이어서 실행, `new_thread`·`today`·`attach`·`run: scheduler` 처리, trace·답변·저장 상태로 판정, 단계별 PASS/FAIL과 이유, 하나라도 실패하면 종료 코드 1
 - **fixture:** `eval/fixtures/certificate_sample.pdf`
 - **테스트:** AC16(가짜 LLM으로 PASS와 FAIL 경로 모두)

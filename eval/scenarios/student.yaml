@@ -70,7 +70,7 @@ steps:
       state:
         remaining_hours: 7
   - id: S9-4
-    input: "학교에서 단체로 복지관 봉사 2시간 갔어"
+    input: "어제 학교에서 단체로 복지관 봉사 2시간 갔어"
     expect:
       tools: [log_activity]
       state:

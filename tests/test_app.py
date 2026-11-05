@@ -265,3 +265,25 @@ def test_final_answer_prefers_supervisor_summary_and_skips_tool_calls():
             AIMessage(content="종합: 남은 4시간, 추천 2건", name="supervisor")]
     assert final_answer(msgs) == "종합: 남은 4시간, 추천 2건"
     assert final_answer([AIMessage(content="", tool_calls=[{"name": "x", "args": {}, "id": "1"}])]) == ""
+
+
+def test_agent_view_hides_handoff_messages():
+    """transfer_back 호출이 하위 Agent 대화에 남으면 없는 도구를 흉내 내 반복 호출한다(S11-7 회귀)."""
+    from volunteer_agent.agents import agent_view
+
+    history = [
+        HumanMessage(content="목표를 10시간으로 고쳐줘"),
+        AIMessage(content="", tool_calls=[{"name": "transfer_to_policy_agent", "args": {}, "id": "h1"}], name="supervisor"),
+        ToolMessage(content="Successfully transferred to policy_agent", tool_call_id="h1", name="transfer_to_policy_agent"),
+        AIMessage(content="", tool_calls=[{"name": "propose_rules", "args": {}, "id": "p1"}], name="policy_agent"),
+        ToolMessage(content="규칙 후보", tool_call_id="p1", name="propose_rules"),
+        AIMessage(content="이대로 확정할까요?", name="policy_agent",
+                  tool_calls=[{"name": "transfer_back_to_supervisor", "args": {}, "id": "b1"}]),
+        ToolMessage(content="Successfully transferred back", tool_call_id="b1", name="transfer_back_to_supervisor"),
+    ]
+    view = agent_view(history)
+    names = [c["name"] for m in view for c in (getattr(m, "tool_calls", None) or [])]
+    assert names == ["propose_rules"]
+    assert not any(isinstance(m, ToolMessage) and m.name.startswith("transfer_") for m in view)
+    assert view[-1].content == "이대로 확정할까요?" and view[-1].tool_calls == []
+    assert len(view) == 4

@@ -10,8 +10,10 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.prebuilt import create_react_agent
+
+from volunteer_agent.llm import get_text
 
 AGENT_TOOLS: dict[str, list[str]] = {
     "policy_agent": ["ingest_policy", "search_policy", "propose_rules", "confirm_rules"],
@@ -35,6 +37,9 @@ COMMON_RULES = """[공통 규칙]
   대입에 반영되지 않습니다'라고 사실만 안내한다.
 - 메시지에 '(첨부 파일: 경로)'가 있으면 사용자가 그 파일을 보낸 것이다. 규정은 ingest_policy의 file_path, 확인서는
   certificate_file에 그 경로를 그대로 넣는다.
+- 데이터 백업은 CLI 명령 `volunteer-agent export`, 전체 삭제는 `volunteer-agent purge`(확인 문구를 정확히 입력해야 삭제)로
+  사용자가 직접 한다고 안내한다. 대화에서 대신 지우지 않고, 관리자에게 요청하라고 하지 않는다.
+- 다른 담당자에게 넘기는 일은 시스템이 처리한다. 답에 '[Called transfer_…]' 같은 이동 표시를 쓰지 않는다.
 - 사용자에게는 한국어로 짧고 분명하게 답한다."""
 
 AGENT_PROMPTS: dict[str, str] = {
@@ -53,12 +58,26 @@ AGENT_PROMPTS: dict[str, str] = {
     "record_agent": """너는 봉사 기록 담당이다. 프로필, 활동 기록·수정·삭제, 확인서, 집계, 마감, 캘린더, 보고서를 맡는다.
 - 활동 기록의 필수 항목은 날짜, 기관, 시간, 분야다. 분야는 활동 내용으로 추정해 코드로 넣고, 날짜·기관·시간이 빠지면
   추측하지 말고 None으로 log_activity를 불러 그 항목만 되묻는다. 필수 항목이 다 있으면 승인 없이 바로 기록한다.
+  - 기관: 기관 이름 대신 장소(공원, 복지관, 요양원, 유기견 보호소, 하천 등)를 말하면 그 장소를 기관으로 쓴다. 되묻지 않는다.
+  - 날짜: '오늘·어제·그저께·지난주 토요일·3월 5일'처럼 날짜 표현이 있을 때만 날짜로 바꾼다. 날짜 표현이 전혀 없으면
+    오늘로 가정하지 말고 date=None으로 불러 날짜만 되묻는다. 다음 메시지가 날짜만 알려 주면("3월 5일이야")
+    앞의 활동 정보와 합쳐 log_activity로 새로 기록한다(update_activity가 아니다).
+- 학생이 신분을 밝히면("고등학생이야") create_profile(user_type="student", 희망 전공이 있으면 major)을 부르고,
+  이번 학기 목표가 몇 시간인지 묻는다. 목표·학기 날짜를 알려 주면 create_profile(student, goal_hours, period_start,
+  period_end)을 다시 부른다(이미 있는 학생 프로필을 고친다). 회사원 프로필은 규칙 후보를 만들 때 자동으로 생기므로 부르지 않는다.
+- 학생 활동을 기록하면 이어서 "이 활동에서 배운 점이나 느낀 점, 희망 전공과 연결되는 점이 있으면 알려 주세요"라고 묻는다.
+  답을 받으면 방금 기록한 활동을 update_activity로 고쳐 lesson(배운 점)과 major_relevance(전공 연관성)에 넣는다.
+- 학교에서 단체로 간 봉사(학교 교육계획 봉사)는 school_planned=true로 기록한다.
+- 시간은 사용자가 말한 그대로 시간 단위 숫자로 바꿔 넣는다(1시간 20분 → 1.33). 0.5시간 단위로 반올림하거나 고치지 않는다.
+  도구가 입력 오류를 돌려주면 그대로 안내한다. 미래 날짜를 '미리 기록'해 달라고 해도 그 날짜 그대로 넣어 입력 오류 안내를 받는다.
 - 확인서 파일이 함께 왔으면 log_activity의 certificate_file에 넣거나 attach_certificate를 부른다.
 - '이미 같은 기록이 있습니다. 그래도 저장할까요?'가 오면 그 질문을 그대로 전하고, 사용자가 저장하라고 하면 confirm_duplicate=true로 다시 부른다.
 - 삭제는 먼저 confirm=false로 대상을 보여 주고, 사용자가 다시 확인하면 confirm=true로 부른다.
 - 도구가 '입력 오류'를 돌려주면 그 안내를 그대로 전한다(저장되지 않았다고 알린다).
 - 결과에 '규칙 미확정'이 있으면 답에도 '규칙 미확정'이라고 밝힌다.
-- 회사 보고서를 만들 수 없다는 안내가 오면 그대로 전한다. 보고서·캘린더를 만들면 파일 경로를 답에 넣는다.""",
+- 회사원이 회사 보고서를 달라고 하면 먼저 get_progress를 부른다. 결과에 '규칙 미확정'이 있으면 generate_report를 부르지 말고
+  "회사 규칙이 확정되지 않아 보고서를 만들 수 없습니다. 규정을 올리고 규칙을 먼저 확정해 주세요."라고 안내한다.
+- 보고서·포트폴리오·캘린더를 만들면 도구가 돌려준 파일 경로(…\파일명.pdf, .ics)를 글자 그대로 답에 넣는다.""",
     "recommend_agent": """너는 봉사 추천 담당이다. 1365 공공 API로 모집 중인 봉사를 찾고, 관심 목록과 사용자 선호(장기 기억)를 관리한다.
 - 사용자가 사는 지역, 가능한 요일, 관심 분야, 희망 전공을 말하면 save_preference로 저장한다(말한 항목만).
 - 추천하기 전에는 항상 get_preferences를 먼저 부르고, 사용자가 이번에 말하지 않은 조건은 저장된 선호를 기본값으로 쓴다
@@ -80,9 +99,10 @@ SUPERVISOR_PROMPT = """너는 봉사활동 추천·관리 서비스의 Superviso
 - 사내 봉사 규정 파일 등록, 규정 질문(인정 여부, 의무 시간), 규칙 후보 확정·변경 → policy_agent
 - 프로필, 활동 기록·수정·삭제, 확인서, 남은 시간, 마감, 캘린더, 보고서·포트폴리오 → record_agent
 - 봉사 찾기·추천, 관심 목록, 사용자 선호(사는 지역, 가능한 요일, 관심 분야, 희망 전공) 저장 → recommend_agent
-  (예: "고등학생이야, 서울 살고 간호학과 가고 싶어" → 프로필은 record_agent, 지역·전공 선호는 recommend_agent)
+  (예: "고등학생이야, 서울 살고 간호학과 가고 싶어" → 먼저 record_agent(학생 프로필, 목표 질문), 이어서 recommend_agent(지역·전공 저장).
+   학생이라고 신분을 밝히는 말이 있으면 반드시 record_agent를 거친다)
 - 봉사 계획 세우기("남은 시간 채우는 계획 세워줘"), 계획 승인("응, 이 계획대로 할게") → planner_agent
-- 인사, 기능 안내 → general_agent
+- 인사, 기능 안내, 데이터 백업·삭제 방법 안내 → general_agent
 [규칙]
 - 앞 대화를 가리키는 말("응, 확정해", "두 번째 거")은 앞 대화를 맡았던 Agent에게 다시 맡긴다.
 - 여러 요구가 섞이면 필요한 Agent를 순서대로 모두 거친다(예: 기록 후 남은 시간 → record_agent, 남은 시간에 맞는 추천 → record_agent 다음 recommend_agent).
@@ -107,6 +127,29 @@ def tools_for(agent: str, tools: list[Any]) -> list[Any]:
     return [by_name[n] for n in AGENT_TOOLS[agent]]
 
 
+def _is_handoff(name: str | None) -> bool:
+    return bool(name) and name.startswith(("transfer_to_", "transfer_back_to_"))
+
+
+def agent_view(messages: list[Any]) -> list[Any]:
+    """하위 Agent에게 보여 줄 대화. Supervisor 이동 메시지(transfer_* 호출과 그 결과)는 뺀다.
+
+    Supervisor가 넣는 transfer_back_to_supervisor 호출이 대화에 쌓이면, 그 도구가 없는 하위 Agent가 이를 흉내 내
+    없는 도구를 계속 부르다 호출 한도(40)에 걸린다(시나리오 S11-7에서 확인). 이동 호출만 지우고 글은 남긴다."""
+    view = []
+    for m in messages:
+        if isinstance(m, ToolMessage) and _is_handoff(m.name):
+            continue
+        if isinstance(m, AIMessage) and any(_is_handoff(c["name"]) for c in m.tool_calls or []):
+            kept = [c for c in m.tool_calls if not _is_handoff(c["name"])]
+            text = get_text(m)
+            if not kept and not text.strip():
+                continue
+            m = AIMessage(content=text if not kept else m.content, tool_calls=kept, name=m.name, id=m.id)
+        view.append(m)
+    return view
+
+
 def build_agents(llm_for: Callable[[str], Any], tools: list[Any], today_fn: Callable[[], date]) -> list[Any]:
     from volunteer_agent.planner import build_planner
 
@@ -116,6 +159,6 @@ def build_agents(llm_for: Callable[[str], Any], tools: list[Any], today_fn: Call
             agents.append(build_planner(llm_for(name), tools_for(name, tools), today_fn))
             continue
         def prompt(state: dict, _name: str = name) -> list:
-            return [SystemMessage(system_prompt(_name, today_fn()))] + list(state["messages"])
+            return [SystemMessage(system_prompt(_name, today_fn()))] + agent_view(state["messages"])
         agents.append(create_react_agent(llm_for(name), tools_for(name, tools), prompt=prompt, name=name))
     return agents

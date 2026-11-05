@@ -273,6 +273,7 @@ def create_profile(user_type: str, goal_hours: float | None = None, period_start
     """기준 프로필을 만든다. 처음 쓰는 사용자라면 사용자 유형도 함께 저장한다.
 
     쓰는 경우: "고등학생이야, 간호학과 가고 싶어", "개인 목표 20시간으로 관리할래"처럼 기준을 새로 정할 때.
+    학생 프로필이 이미 있으면 새로 만들지 않고 준 항목(목표, 학기 날짜, 전공)만 고친다("학기당 10시간, 3/2~7/18").
     쓰지 않는 경우: 회사 규정 등록(ingest_policy 사용, 회사 프로필은 규칙 후보를 만들 때 자동 생성), 유형 전환(지원하지 않음).
 
     Args:
@@ -290,10 +291,16 @@ def create_profile(user_type: str, goal_hours: float | None = None, period_start
         elif setting is not None and setting.user_type != user_type:
             raise InputError("사용자 유형은 처음 정한 뒤 바꿀 수 없습니다(유형 전환은 지원하지 않습니다).")
         svc = RecordService(store, ctx.settings, ctx.today)
-        p = svc.create_profile(user_type, goal_hours=goal_hours, period_start=_parse_date(period_start, "기간 시작"),
-                               period_end=_parse_date(period_end, "기간 끝"), major=major)
+        start, end = _parse_date(period_start, "기간 시작"), _parse_date(period_end, "기간 끝")
+        existing = [x for x in store.list_profiles(active_only=True) if x.user_type == "student"]
+        if user_type == "student" and existing:
+            p = svc.update_student_profile(existing[0], goal_hours, start, end, major)
+            verb = "고쳤습니다"
+        else:
+            p = svc.create_profile(user_type, goal_hours=goal_hours, period_start=start, period_end=end, major=major)
+            verb = "만들었습니다"
     period = f"{p.period_start}~{p.period_end}" if p.period_start else "규칙 확정 때 정함"
-    return f"프로필 #{p.id}을 만들었습니다: {p.user_type}, 기준 {p.source}, 목표 {_h(p.goal_hours)}, 기간 {period}, 전공 {p.major or '-'}"
+    return f"프로필 #{p.id}을 {verb}: {p.user_type}, 기준 {p.source}, 목표 {_h(p.goal_hours)}, 기간 {period}, 전공 {p.major or '-'}"
 
 
 @mcp.tool()
@@ -668,6 +675,8 @@ def approve_plan(plan: dict, confirmation_text: str) -> str:
 def main() -> None:
     logging.basicConfig(level=logging.WARNING)  # stdout은 MCP 프로토콜 전용, 로그는 stderr
     preload_heavy_modules()
+    # 임베딩 실패는 BM25로 넘어가며 마스킹된 이유를 trace에 남긴다. 라이브러리의 긴 traceback(계정 정보 포함)은 숨긴다.
+    logging.getLogger("langchain_aws").setLevel(logging.CRITICAL)
     settings = load_settings()
     install_network_guard(settings)
     mcp.run(show_banner=False)

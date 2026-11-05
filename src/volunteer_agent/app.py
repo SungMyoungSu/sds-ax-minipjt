@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 from collections.abc import AsyncIterator, Callable
@@ -212,6 +213,9 @@ def _trace_turn_end(tracer: Any, thread_id: str, turn: Turn, started: float) -> 
                  output=tracer._sum(turn.answer), latency_s=round(time.perf_counter() - started, 3))
 
 
+_HANDOFF_NOTE = re.compile(r"\[Called transfer_\w+\]")
+
+
 def final_answer(messages: list[Any]) -> str:
     """이번 턴의 최종 답.
 
@@ -227,6 +231,7 @@ def final_answer(messages: list[Any]) -> str:
         text = get_text(m)
         for marker in ("Transferring back to supervisor", "Successfully transferred back to supervisor"):
             text = text.replace(marker, "")
+        text = _HANDOFF_NOTE.sub("", text)
         text = text.strip().strip("-").strip()
         if len(text) >= 2 and any(ch.isalnum() for ch in text):
             return text

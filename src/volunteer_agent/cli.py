@@ -5,10 +5,10 @@
     volunteer-agent export [--output 경로]        DATA_DIR(DB·확인서·보고서) zip 내보내기
     volunteer-agent purge [--confirm 문구]        DATA_DIR 삭제(확인 문구가 정확해야 함)
     volunteer-agent notify [--today 날짜]         마감 알림 점검 1회(Windows 작업 스케줄러용)
+    volunteer-agent scenario <파일|폴더>          CLI 시나리오 평가(단계별 PASS/FAIL, 실패가 있으면 종료 코드 1)
 
 공통 옵션: --user-type employee|student(첫 실행 질문 대신), --today YYYY-MM-DD, --show-trace, --api-mode fixture|live,
 --attach 파일(--once와 함께, 규정·확인서 파일 첨부)
-시나리오 평가(`scenario`)는 17단계에서 붙인다.
 """
 
 from __future__ import annotations
@@ -282,6 +282,26 @@ def quiet_library_noise() -> None:
     logging.getLogger("langchain_aws").setLevel(logging.ERROR)
 
 
+def run_scenarios(settings: Settings, args: argparse.Namespace, console: Console, runtime: Runtime | None) -> int:
+    """시나리오 평가. 모든 단계가 통과하면 0, 하나라도 실패하면 1, 형식·설정 오류는 2."""
+    from volunteer_agent.scenario import ScenarioError, run_all
+
+    if runtime is None:
+        from volunteer_agent.llm import has_llm_credentials
+
+        if not has_llm_credentials(settings):
+            console.say("Bedrock 설정(LLM 모델, AWS 키)이 .env에 없어 시나리오를 실행할 수 없습니다.")
+            return 2
+        runtime = default_runtime()
+    try:
+        reports = asyncio.run(run_all(args.target, settings, runtime, say=console.say, keep=args.keep,
+                                      show_answers=args.show_answers))
+    except ScenarioError as exc:
+        console.say(f"시나리오 형식 오류: {exc}")
+        return 2
+    return 0 if all(r.passed == len(r.results) for r in reports) else 1
+
+
 # ---------------------------------------------------------------- 인자
 
 def _common(parser: argparse.ArgumentParser, suppress: bool) -> None:
@@ -306,6 +326,10 @@ def build_parser() -> argparse.ArgumentParser:
     exp.add_argument("--output", type=Path, help="zip 경로(기본: DATA_DIR/exports/)")
     purge = sub.add_parser("purge", help="DATA_DIR 삭제(확인 문구 필요)")
     purge.add_argument("--confirm", metavar="문구", help=f"확인 문구('{PURGE_PHRASE}')")
+    scen = sub.add_parser("scenario", help="CLI 시나리오 평가(eval/scenarios/)")
+    scen.add_argument("target", type=Path, help="시나리오 .yaml 파일 또는 폴더")
+    scen.add_argument("--keep", action="store_true", help="시나리오별 임시 DATA_DIR을 지우지 않고 남김")
+    scen.add_argument("--show-answers", action="store_true", help="통과한 단계의 답변도 출력")
     note = sub.add_parser("notify", help="마감 알림 점검 1회(작업 스케줄러용)")
     note.add_argument("--today", type=parse_today, default=argparse.SUPPRESS)
     return parser
@@ -337,6 +361,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None, stdout: 
         return purge_data(settings, console, args.confirm)
     if args.command == "notify":
         return notify(settings, args.today, console)
+    if args.command == "scenario":
+        return run_scenarios(settings, args, console, runtime)
     if args.command != "chat" and args.once is None:
         parser.print_help(console.stdout)
         return 0

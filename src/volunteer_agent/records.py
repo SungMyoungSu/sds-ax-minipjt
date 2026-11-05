@@ -154,6 +154,27 @@ class RecordService:
             period_start=period_start, period_end=period_end, major=major,
         ))
 
+    def update_student_profile(self, profile: Profile, goal_hours: float | None = None,
+                               period_start: date | None = None, period_end: date | None = None,
+                               major: str | None = None) -> Profile:
+        """이미 있는 학생 프로필에 준 항목만 채운다(첫 대화에서 만든 뒤 목표·학기를 나중에 알려 주는 흐름)."""
+        if goal_hours is not None and goal_hours <= 0:
+            raise InputError("목표 시간은 0보다 커야 합니다.")
+        if (period_start is None) != (period_end is None):
+            raise InputError("기간은 시작일과 종료일을 함께 입력해 주세요.")
+        if period_start and period_end and period_end < period_start:
+            raise InputError("기간 종료일이 시작일보다 앞설 수 없습니다.")
+        if goal_hours is not None:
+            profile.goal_hours = goal_hours
+            if profile.source == "none":
+                profile.source = "self_goal"
+        if period_start is not None:
+            profile.period_start, profile.period_end = period_start, period_end
+        if major:
+            profile.major = major
+        self.store.update_profile(profile)
+        return self.store.get_profile(profile.id)
+
     # -- 기록 --
 
     def find_duplicate(self, start_date: date, organization: str, hours: float,

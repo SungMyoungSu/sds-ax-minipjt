@@ -193,3 +193,10 @@ def test_network_guard_blocks_and_restores(settings):
     finally:
         uninstall()
     assert socket.getaddrinfo.__name__ == "getaddrinfo"
+
+
+def test_student_create_profile_twice_updates_existing(env):
+    assert "만들었습니다" in call("create_profile", user_type="student", major="간호학")
+    out = call("create_profile", user_type="student", goal_hours=10, period_start="2026-03-02", period_end="2026-07-18")
+    assert "고쳤습니다" in out and "목표 10" in out and "2026-03-02~2026-07-18" in out and "간호학" in out
+    assert out.startswith("프로필 #1")
