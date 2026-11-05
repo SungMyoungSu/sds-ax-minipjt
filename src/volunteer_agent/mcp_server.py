@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import functools
+import json
 import logging
 import os
 from collections.abc import Callable, Iterator
@@ -44,6 +45,7 @@ from volunteer_agent.records import FIELD_LABELS, ActivityInput, RecordService
 from volunteer_agent.reports import generate_report as _report
 from volunteer_agent.rules import RuleDraft, RuleEdits, company_profile, propose_rule_change, rules_confirmed
 from volunteer_agent.rules import confirm_rules as _confirm
+from volunteer_agent.rules import is_explicit_confirmation
 from volunteer_agent.rules import propose_rules as _propose
 from volunteer_agent.store import Store, StoreError
 from volunteer_agent.type_codes import load_type_codes
@@ -54,7 +56,7 @@ TOOL_NAMES = [
     "ingest_policy", "search_policy", "propose_rules", "confirm_rules",
     "create_profile", "list_profiles", "log_activity", "update_activity", "delete_activity",
     "attach_certificate", "get_progress", "get_upcoming_deadlines", "export_ics", "generate_report",
-    "search_volunteer", "save_to_watchlist", "remove_from_watchlist",
+    "search_volunteer", "save_to_watchlist", "remove_from_watchlist", "approve_plan",
 ]
 
 mcp = FastMCP("volunteer-agent")
@@ -420,17 +422,29 @@ def attach_certificate(activity_id: int, file_path: str) -> str:
 
 @mcp.tool()
 @safe
-def get_progress() -> str:
+def get_progress(output: str = "text") -> str:
     """이번 기간 진행 현황과 활동 목록을 보여 준다.
 
     쓰는 경우: "남은 시간 얼마야?", "올해 얼마나 했어?"처럼 집계가 필요할 때.
     회사원: 인정 합계, 남은 시간, 목표 대비 %, 확인서 대기. 목표 없는 학생: 누적, 분야별, 전공 연계 수, 학교 주관·개인.
     쓰지 않는 경우: 마감일 확인(get_upcoming_deadlines), 규정 질문(search_policy).
+
+    Args:
+        output: text(사람이 읽는 문장) 또는 json(planner가 계산에 쓰는 값)
     """
     ctx = context()
     with ctx.store() as store:
         svc = RecordService(store, ctx.settings, ctx.today)
         progress = svc.progress()
+        if output == "json":
+            return json.dumps({"today": ctx.today.isoformat(), "profiles": [
+                {"profile_id": p.profile_id, "user_type": p.user_type, "source": p.source,
+                 "rules_pending": p.rules_pending, "goal_hours": p.goal_hours,
+                 "recognized_hours": p.recognized_hours, "pending_proof_hours": p.pending_proof_hours,
+                 "remaining_hours": p.remaining_hours,
+                 "period_start": p.period.start.isoformat() if p.period else None,
+                 "period_end": p.period.end.isoformat() if p.period else None}
+                for p in progress]}, ensure_ascii=False)
         lines = [_progress_text(progress)]
         acts = {a.id: a for a in store.list_activities()}
         for p in progress:
@@ -493,7 +507,8 @@ def generate_report(kind: str | None = None) -> str:
 @safe
 def search_volunteer(region: str | None = None, field_codes: list[str] | None = None, use_company_rules: bool = True,
                      start: str | None = None, end: str | None = None, weekdays: list[int] | None = None,
-                     keyword: str | None = None, major: str | None = None) -> str:
+                     keyword: str | None = None, major: str | None = None, limit: int = 5,
+                     output: str = "text") -> str:
     """1365 공공 API에서 모집 중인 봉사를 최대 5건 추천한다(1365 원문 링크 포함). 신청은 대행하지 않는다.
 
     쓰는 경우: "서울 주말 환경 봉사 찾아줘", "남은 시간 채울 봉사 추천해줘".
@@ -512,6 +527,8 @@ def search_volunteer(region: str | None = None, field_codes: list[str] | None = 
         weekdays: 가능한 요일(0=월 … 6=일). 주말이면 [5, 6]
         keyword: 활동명 검색어
         major: 학생의 희망 전공(없으면 학생 프로필의 전공)
+        limit: 최대 건수(사용자 추천은 5, planner는 더 많이 받을 수 있음)
+        output: text(사람이 읽는 목록) 또는 json(planner가 계산에 쓰는 값)
     """
     ctx = context()
     with ctx.store() as store:
@@ -531,7 +548,18 @@ def search_volunteer(region: str | None = None, field_codes: list[str] | None = 
             if not q.major:
                 q.major = next((p.major for p in store.list_profiles(active_only=True)
                                 if p.user_type == "student" and p.major), None)
-    return _search(ctx.client(), q, ctx.today).message
+    result = _search(ctx.client(), q, ctx.today, limit=max(1, min(limit, 30)))
+    if output == "json":
+        return json.dumps({"sample": result.sample, "notes": result.notes, "items": [
+            {"program_id": r.program.program_id, "title": r.program.title, "url": r.program.url,
+             "organization": r.program.organization, "field_name": r.program.field_name,
+             "program_start": r.program.program_start.isoformat() if r.program.program_start else None,
+             "program_end": r.program.program_end.isoformat() if r.program.program_end else None,
+             "start_hour": r.program.start_hour, "end_hour": r.program.end_hour,
+             "expected_hours": r.program.expected_hours,
+             "recruit_end": r.program.recruit_end.isoformat() if r.program.recruit_end else None}
+            for r in result.items]}, ensure_ascii=False)
+    return result.message
 
 
 @mcp.tool()
@@ -587,6 +615,40 @@ def preload_heavy_modules() -> None:
             importlib.import_module(name)
         except Exception as e:  # noqa: BLE001 - 없는 모듈은 해당 기능에서 다시 안내
             logger.warning("preload %s failed: %s", name, type(e).__name__)
+
+
+# ---- planner_agent 도구 ----
+
+@mcp.tool()
+@safe
+def approve_plan(plan: dict, confirmation_text: str) -> str:
+    """사용자가 봉사 계획을 분명히 승인했을 때만 계획을 저장하고, 계획에 든 봉사를 관심 목록에 넣는다.
+
+    쓰는 경우: planner가 계획을 보여 준 뒤 사용자가 "응, 이 계획대로 할게"처럼 승인했을 때.
+    쓰지 않는 경우: 계획을 처음 세울 때(승인 전에는 저장하지 않는다), 사용자가 승인을 말하지 않았을 때.
+
+    Args:
+        plan: planner가 만든 계획(profile_id, target_hours, period_end, weeks[items], expected_total, shortfall_hours, rationale)
+        confirmation_text: 사용자의 실제 승인 발화
+    """
+    if not is_explicit_confirmation(confirmation_text):
+        return "계획을 저장하지 않았습니다. 이 계획대로 하려면 '응, 이 계획대로 할게'처럼 분명히 말씀해 주세요."
+    from volunteer_agent.models import Plan
+
+    profile_id = plan.get("profile_id")
+    if not isinstance(profile_id, int):
+        raise InputError("계획에 프로필 번호가 없습니다. 계획을 다시 세워 주세요.")
+    items = [it for w in plan.get("weeks", []) for it in w.get("items", [])]
+    ctx = context()
+    with ctx.store() as store:
+        saved = store.add_plan(Plan(profile_id=profile_id, content=plan))
+        saved = store.mark_plan_approved(saved.id)
+        for it in items:
+            _watch(store, str(it["program_id"]), it["title"], it.get("url"),
+                   _parse_date(it.get("recruit_end"), "모집 마감일"))
+        n = len(store.list_watchlist())
+    return (f"계획 #{saved.id}을 저장했습니다. 계획의 봉사 {len(items)}건을 관심 목록에 넣었습니다(관심 목록 {n}건). "
+            "모집 마감 전에 1365에서 직접 신청해 주세요.")
 
 
 def main() -> None:

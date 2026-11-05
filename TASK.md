@@ -113,7 +113,7 @@
 - **완료 조건:** AC18 통과
 - **참고:** `reference/long_term_memory.py`
 
-### [ ] 13. Plan-and-Execute (planner_agent)
+### [x] 13. Plan-and-Execute (planner_agent)
 - **만들 것:** `StateGraph`(planner → execute → replan → finalize), `Plan`·`Replan` 구조화 출력, 실행 단계에서 남은 시간·마감·선호 조회와 후보 검색, recursion_limit 40, Supervisor 하위 Agent로 등록
 - **테스트:** AC19(남은 4시간, 12/31 전, 원문 링크, 상한 미초과). LLM은 구조화 출력 mock
 - **PRD 추가 기준:** 결과 항목 6개, 승인해야 저장되고(`approve_plan`) 계획의 봉사가 관심 목록에 추가, 빈 주 표시와 "예상 부족 N시간", 목표 없는 학생은 목표를 먼저 질문, 주차 배분은 균등(0.5시간 단위 올림) (PRD 30~33)

@@ -85,7 +85,7 @@ def test_ac18_preferences_used_in_new_thread_and_gone_after_purge(settings):
     stubs = StubTools()
     models = {"supervisor": ScriptedChat(handler=supervisor_handler, seen=[]),
               "recommend_agent": ScriptedChat(handler=recommend_handler, seen=[])}
-    for role in ("policy_agent", "record_agent", "general_agent"):
+    for role in ("policy_agent", "record_agent", "general_agent", "planner_agent"):
         models[role] = ScriptedChat(handler=general_handler, seen=[])
     clock = AppClock.create(settings, date(2026, 11, 4))
 

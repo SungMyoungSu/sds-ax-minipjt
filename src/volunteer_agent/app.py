@@ -16,6 +16,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.checkpoint.memory import InMemorySaver
@@ -144,23 +145,38 @@ class Turn:
     tools: list[str]
 
 
-async def ask(app: Any, text: str, thread_id: str) -> Turn:
+class ToolRecorder(BaseCallbackHandler):
+    """실제로 실행된 도구 이름을 순서대로 모은다(ReAct Agent와 planner 그래프 모두)."""
+
+    def __init__(self) -> None:
+        self.names: list[str] = []
+        self._tool_runs: set = set()
+
+    def on_tool_start(self, serialized: dict | None, input_str: str, **kwargs: Any) -> None:
+        run_id, parent = kwargs.get("run_id"), kwargs.get("parent_run_id")
+        self._tool_runs.add(run_id)
+        if parent in self._tool_runs:  # 감싼 도구 안에서 다시 부른 같은 도구(confirm_rules 주입판)는 한 번만
+            return
+        name = (serialized or {}).get("name") or kwargs.get("name") or ""
+        if name and not name.startswith(("transfer_to_", "transfer_back_to_")):
+            self.names.append(name)
+
+
+async def ask(app: Any, text: str, thread_id: str, callbacks: list | None = None) -> Turn:
     """질문 하나를 thread_id 대화로 실행하고, 이번 턴에서 거친 Agent와 부른 도구를 함께 돌려준다."""
-    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT}
+    recorder = ToolRecorder()
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT,
+              "callbacks": [recorder, *(callbacks or [])]}
     before = len((await app.aget_state(config)).values.get("messages", [])) if app.checkpointer else 0
     result = await app.ainvoke({"messages": [HumanMessage(content=text)]}, config=config)
     new = result["messages"][before:]
-    agents, tools = [], []
+    agents = []
     for m in new:
         for tc in getattr(m, "tool_calls", None) or []:
-            name = tc["name"]
-            if name.startswith("transfer_to_"):
-                agent = name.removeprefix("transfer_to_")
-                if agent in AGENT_TOOLS and agent not in agents:
-                    agents.append(agent)
-            elif not name.startswith("transfer_back_to_"):
-                tools.append(name)
-    return Turn(answer=final_answer(new), messages=new, agents=agents, tools=tools)
+            agent = tc["name"].removeprefix("transfer_to_")
+            if tc["name"].startswith("transfer_to_") and agent in AGENT_TOOLS and agent not in agents:
+                agents.append(agent)
+    return Turn(answer=final_answer(new), messages=new, agents=agents, tools=recorder.names)
 
 
 def final_answer(messages: list[Any]) -> str:

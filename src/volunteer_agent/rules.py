@@ -328,7 +328,7 @@ def propose_rule_change(store: Store, edits: RuleEdits, today: date) -> Proposal
 
 # ---- 확정 ----
 
-_CONFIRM = re.compile(r"확정|승인|확인했|맞아|맞습니다|좋아|좋습니다|그래|그렇게\s*해|오케이|^\s*(응|네|예|ㅇㅇ|ok|okay|yes)\b", re.I)
+_CONFIRM = re.compile(r"확정|승인|확인했|맞아|맞습니다|좋아|좋습니다|그래|그렇게\s*해|대로\s*(할게|해|진행)|오케이|^\s*(응|네|예|ㅇㅇ|ok|okay|yes)\b", re.I)
 _REJECT = re.compile(r"하지\s*마|안\s*해|말고|아니|취소|보류|잠깐|나중에|아직|싫어", re.I)
 
 

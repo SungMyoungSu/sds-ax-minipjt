@@ -18,7 +18,7 @@ from volunteer_agent.llm import has_llm_credentials
 from volunteer_agent.mcp_server import TOOL_NAMES
 
 ROOT = Path(__file__).resolve().parents[1]
-ALL_TOOLS = [n for names in AGENT_TOOLS.values() for n in names]
+ALL_TOOLS = list(dict.fromkeys(n for names in AGENT_TOOLS.values() for n in names))
 MCP_TOOLS = [n for n in ALL_TOOLS if n not in PYTHON_TOOLS]
 
 
@@ -114,6 +114,7 @@ def fake_app(settings):
         "record_agent": ScriptedChat(handler=general_handler, seen=[]),
         "recommend_agent": ScriptedChat(handler=general_handler, seen=[]),
         "general_agent": ScriptedChat(handler=general_handler, seen=[]),
+        "planner_agent": ScriptedChat(handler=general_handler, seen=[]),
     }
     stubs = StubTools()
     clock = AppClock.create(settings, date(2026, 11, 4))
@@ -145,6 +146,9 @@ def test_compiled_agents_bind_only_own_tools(settings):
     agents = build_agents(lambda r: ScriptedChat(handler=general_handler, seen=[]), StubTools().all(),
                           lambda: date(2026, 11, 4))
     for agent in agents:
+        if agent.name == "planner_agent":  # ReAct가 아니라 Plan-and-Execute 그래프
+            assert {"planner", "execute", "replan", "finalize", "approve"} <= set(agent.nodes)
+            continue
         tool_node = agent.nodes.get("tools")
         bound = sorted(tool_node.bound.tools_by_name) if tool_node else []
         assert bound == sorted(AGENT_TOOLS[agent.name]), agent.name

@@ -1,6 +1,6 @@
 """에이전트 정의 (역할 프롬프트, 담당 도구, Supervisor 배분 기준). 이 코드가 유일한 기준이다.
 
-Agent마다 자기 도구만 바인딩한다(CLAUDE.md 표). planner_agent는 13단계에서 붙인다.
+Agent마다 자기 도구만 바인딩한다(CLAUDE.md 표). planner_agent는 ReAct가 아니라 Plan-and-Execute 그래프(planner.py)다.
 save_preference·get_preferences는 MCP가 아닌 Python 도구(memory.py, LangGraph Store)다.
 """
 
@@ -21,6 +21,7 @@ AGENT_TOOLS: dict[str, list[str]] = {
     ],
     "recommend_agent": ["search_volunteer", "save_to_watchlist", "remove_from_watchlist",
                         "save_preference", "get_preferences"],
+    "planner_agent": ["get_progress", "get_upcoming_deadlines", "get_preferences", "search_volunteer", "approve_plan"],
     "general_agent": [],
 }
 PYTHON_TOOLS = ("save_preference", "get_preferences")  # MCP 서버가 아닌 Python 도구
@@ -78,6 +79,7 @@ SUPERVISOR_PROMPT = """너는 봉사활동 추천·관리 서비스의 Superviso
 - 프로필, 활동 기록·수정·삭제, 확인서, 남은 시간, 마감, 캘린더, 보고서·포트폴리오 → record_agent
 - 봉사 찾기·추천, 관심 목록, 사용자 선호(사는 지역, 가능한 요일, 관심 분야, 희망 전공) 저장 → recommend_agent
   (예: "고등학생이야, 서울 살고 간호학과 가고 싶어" → 프로필은 record_agent, 지역·전공 선호는 recommend_agent)
+- 봉사 계획 세우기("남은 시간 채우는 계획 세워줘"), 계획 승인("응, 이 계획대로 할게") → planner_agent
 - 인사, 기능 안내 → general_agent
 [규칙]
 - 앞 대화를 가리키는 말("응, 확정해", "두 번째 거")은 앞 대화를 맡았던 Agent에게 다시 맡긴다.
@@ -104,8 +106,13 @@ def tools_for(agent: str, tools: list[Any]) -> list[Any]:
 
 
 def build_agents(llm_for: Callable[[str], Any], tools: list[Any], today_fn: Callable[[], date]) -> list[Any]:
+    from volunteer_agent.planner import build_planner
+
     agents = []
     for name in AGENT_TOOLS:
+        if name == "planner_agent":
+            agents.append(build_planner(llm_for(name), tools_for(name, tools), today_fn))
+            continue
         def prompt(state: dict, _name: str = name) -> list:
             return [SystemMessage(system_prompt(_name, today_fn()))] + list(state["messages"])
         agents.append(create_react_agent(llm_for(name), tools_for(name, tools), prompt=prompt, name=name))
