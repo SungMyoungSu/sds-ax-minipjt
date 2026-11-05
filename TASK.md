@@ -1,6 +1,6 @@
 # TASK.md: 구현 계획
 
-> 설계는 끝났습니다(`SERVICE.md`, `SCENARIO.md`, `CLAUDE.md`, `PRD.md`, `seeds/volunteer-agent-v2.seed.yaml` 2.4.0).
+> 설계는 끝났습니다(`SERVICE.md`, `SCENARIO.md`, `CLAUDE.md`, `PRD.md`, `seeds/volunteer-agent-v2.seed.yaml` 2.4.1).
 > 이 문서는 **사용자와 함께 한 단계씩** 구현하기 위한 순서와 완료 조건입니다. 아직 구현은 시작하지 않았습니다.
 
 ## 진행 방식 (모든 단계 공통)
@@ -30,7 +30,7 @@
 - **참고:** `reference/README.txt`(환경 준비), `.env.example`
 
 ### [ ] 2. 저장소와 데이터 모델
-- **만들 것:** SQLite 스키마와 접근 계층. 사용자 설정(`user_type`), 기준 프로필, 활동(`school_planned` 포함), 규칙 후보와 확정 규칙, 마감, 관심 목록. 1365 분야 코드표 파일(출처와 기준일 표기)
+- **만들 것:** SQLite 스키마와 접근 계층. 사용자 설정(`user_type`), 기준 프로필, 활동(`school_planned` 포함), 규칙 후보와 확정 규칙, 마감, 관심 목록. 1365 분야 코드표 파일(출처와 기준일 표기) PRD 반영: 활동별·프로필별 상태 4종(인정, 확인서 대기, 제외, 규칙 미확정), 전환 시 회사 집계 포함 여부(`include_in_company`), 기록 당시 유형(`recorded_as`), 계획(주차·후보·승인 여부·승인 시각), 알림 발송·`.eml` 저장 기록
 - **테스트:** 테이블 생성, CRUD, 사용자 설정을 한 번만 저장하는지, 코드표 로드
 - **완료 조건:** 명세의 개체(Profile, Activity, RuleCandidate, Deadline, WatchlistItem, UserSetting, ActivityTypeCode)가 모두 저장되고 조회됨
 - **참고:** `reference/make_data.py`(데이터 준비 방식)
@@ -47,7 +47,7 @@
 
 ### [ ] 4. 규정 수집과 BM25 검색
 - **만들 것:** `.md`·텍스트 PDF를 조항 단위로 분할(pypdf), `.docx`·`.hwp` 거부, BM25 검색, 근거는 원문 그대로의 조항과 출처 파일명, 근거가 없으면 `규정에서 확인되지 않음`
-- **fixture:** `eval/fixtures/volunteer_policy.md`(연 8시간, 1~12월, 확인서 필수, 환경·사회복지만 인정, 헌혈 언급 없음), `volunteer_policy.hwp`
+- **fixture:** `eval/fixtures/volunteer_policy.md`(연 8시간, 1~12월, 확인서 필수, 환경·사회복지만 인정, 헌혈 언급 없음), `volunteer_policy.hwp`, `volunteer_policy_no_period.md`(기준 기간 조항 없음, "규정에 없음" 확인용)
 - **테스트:** AC2, 지원하지 않는 형식 거부
 - **PRD 추가 기준:** 근거 없음 문구 `규정에서 확인되지 않음. 담당 부서에 확인이 필요합니다.`, 규정 문서가 없을 때 업로드 안내 문구, 확정 규칙과 원문 차이 알림 (PRD 12~15)
 - **완료 조건:** AC2 통과
@@ -73,7 +73,7 @@
 
 ### [ ] 7. 공공 API 추천과 관심 목록
 - **만들 것:** 1365 봉사참여정보 API, 청소년 봉사 프로그램 API 클라이언트(Base URL과 **오퍼레이션 경로는 설정값**, 타임아웃 10초, 서비스 키 URL 인코딩), XML 파싱, 지역·기간·분야·모집 상태·청소년 가능 필터, 원문 링크, 관심 목록 저장·삭제, 키 없음·오류·타임아웃 안내 메시지(원인과 해결 방법)
-- **fixture:** `tests/fixtures/api/*.xml`(정상, 빈 결과, 오류 코드, 페이지 2개, 설명에 지시문이 섞인 항목 1개)
+- **fixture:** `tests/fixtures/api/*.xml`(정상, 빈 결과, 오류 코드, 페이지 2개, 설명에 지시문이 섞인 항목 1개, 정원이 찬 항목 1개, 마감이 지난 항목 1개). 날짜는 `--today` 기준 상대값으로 저장
 - **테스트:** AC4, AC5(API 부분), 키가 있을 때만 실연동 스모크 테스트
 - **PRD 추가 기준:** 최대 5건, 정원 찬 봉사 제외, 학생은 전공 관련 분야 우선 정렬, 표시 항목 9개, 0건이면 조건 완화 제안, API 실패 시 샘플 추천과 "샘플 데이터로 추천했습니다" 표시(샘플 날짜는 `--today` 기준 상대 날짜) (PRD 25~29)
 - **완료 조건:** AC4, AC5, AC25(추천 부분) 통과
@@ -123,7 +123,7 @@
 ### [ ] 14. 입력 가드레일과 고정 거절
 - **만들 것:** 1차 정규식(주입 패턴, 금지 주제: 법률 자문, 대입 합격 예측, 다른 사람 개인정보), 2차 LLM 판별(`InjectionCheck`, 확신도 0.7 초과), LLM이 실패하면 규칙 결과만 사용, 고정 거절 문구 2개, `guard_audit.log`(사유 마스킹)
 - **테스트:** AC9(차단, 오탐 없음, LLM 실패 처리)
-- **PRD 추가 기준:** 거절 5범주 고정 문구(완전 일치), 섞인 요청은 정상 부분도 수행하지 않고 전체 거절, 우선순위 주입(잠정) > 타인 개인정보 > 허위 기록 > 신청 대행 > 봉사 무관 (PRD 3~8)
+- **PRD 추가 기준:** 거절 5범주 고정 문구(완전 일치), 섞인 요청은 정상 부분도 수행하지 않고 전체 거절, 주입은 감지 즉시 거절, 그 밖에는 타인 개인정보 > 허위 기록 > 신청 대행 > 봉사 무관 (PRD 3~8)
 - **완료 조건:** AC9, AC21 통과
 - **참고:** `reference/guards_input.py`, `reference/guards_refusal.py`
 
@@ -138,18 +138,18 @@
 ## M5. CLI와 평가
 
 ### [ ] 16. CLI
-- **만들 것:** `volunteer-agent chat`(대화형, 실행 1회 = 대화 1개), `--once`, 공통 옵션 `--user-type`, `--today`, `--show-trace`, `--api-mode fixture|live`, 첫 실행 시 회사원/학생 질문, `export`(zip), `purge`(확인 문구), 시작할 때 임박한 마감 안내
+- **만들 것:** `volunteer-agent chat`(대화형, 실행 1회 = 대화 1개), `--once`, 공통 옵션 `--user-type`, `--today`, `--show-trace`, `--api-mode fixture|live`, 첫 실행 시 회사원/학생 질문, `export`(zip), `purge`(확인 문구), 시작할 때 임박한 마감 안내. 유형 전환과 학생 시절 기록 선택은 별도 명령 없이 대화(`chat`) 안에서 처리
 - **테스트:** AC12(CLI 부분), AC13(사용자 부분), AC15
 - **완료 조건:** AC12(CLI), AC13, AC15 통과
 
 ### [ ] 17. 시나리오 실행기
-- **만들 것:** `volunteer-agent scenario <파일|폴더>`. `eval/scenarios/README.md` 형식 해석, 시나리오마다 빈 임시 `DATA_DIR`, 단계를 순서대로 이어서 실행, `new_thread`·`today`·`attach`·`run: scheduler` 처리, trace·답변·저장 상태로 판정, 단계별 PASS/FAIL과 이유, 하나라도 실패하면 종료 코드 1
+- **만들 것:** `volunteer-agent scenario <파일|폴더>`. `eval/scenarios/README.md` 형식 해석, 시나리오 4개(employee, student, safety, transition)를 각각 빈 임시 `DATA_DIR`에서, 단계를 순서대로 이어서 실행, `new_thread`·`today`·`attach`·`run: scheduler` 처리, trace·답변·저장 상태로 판정, 단계별 PASS/FAIL과 이유, 하나라도 실패하면 종료 코드 1
 - **fixture:** `eval/fixtures/certificate_sample.pdf`
 - **테스트:** AC16(가짜 LLM으로 PASS와 FAIL 경로 모두)
 - **완료 조건:** AC16(판정 로직) 통과
 
 ### [ ] 18. 인-아웃 평가, LLM 심사, 통합 점검
-- **만들 것:** `eval/run_eval.py`(12건, 문항마다 새 대화, 가드레일을 앞단에 둠, DoD 출력), `eval/llm_judge.py` + `eval/judge_set.json`(6문항, 고정 루브릭), `volunteer-agent check`
+- **만들 것:** `eval/run_eval.py`(12건, 문항마다 새 대화, 가드레일을 앞단에 둠, DoD 출력), `eval/llm_judge.py` + `eval/judge_set.json`(6문항, 고정 루브릭), `volunteer-agent check`. `run_eval`의 차단 판정 신호는 고정 거절 문구 5개 전부를 기준으로 한다(인-아웃 guardrail 3문항: 주입 차단, 신청 대행 차단, 정상 통과)
 - **테스트:** 평가셋 형식 검사(malformed·unsupported 0건), 심사 출력 형식, check 출력
 - **완료 조건:** AC11, AC20 (a)(b) 통과(형식 부분)
 - **참고:** `reference/run_eval.py`, `reference/llm_judge.py`, `reference/integration_check.py`
@@ -167,7 +167,7 @@
 - **할 것:**
   - master에서 `.env`를 적용해 실행
     - `uv run pytest`(실연동 포함)
-    - `uv run volunteer-agent scenario eval/scenarios/` → **48단계 전부 통과**
+    - `uv run volunteer-agent scenario eval/scenarios/` → **63단계 전부 통과**
     - `uv run python eval/run_eval.py` → **10/12 이상, 가드레일 전부 통과**
     - `uv run python eval/llm_judge.py` → **평균 4점 이상**
     - `uv run volunteer-agent check`
@@ -185,10 +185,10 @@
 | M3 외부 연동과 산출물 | 7~9 | AC4, AC5, AC6, AC7, AC14 (e), AC25(추천·알림) | 대기 |
 | M4 에이전트 | 10~15 | AC8, AC9, AC10, AC13, AC18, AC19, AC21, AC25(계획) | 대기 |
 | M5 CLI와 평가 | 16~19 | AC11, AC12, AC15, AC16, AC20 (a)(b) | 대기 |
-| M6 최종 검증 | 20 | 시나리오 48단계, 인-아웃 10/12, 심사 평균 4점 이상 | 대기 |
+| M6 최종 검증 | 20 | 시나리오 63단계, 인-아웃 10/12, 심사 평균 4점 이상 | 대기 |
 
 ## 미해결 사항
-- [ ] PRD "Decide Later" 10개 항목: `SERVICE.md` 5장 "미결 사항과 잠정 기본값"을 따르고, 해당 단계 구현 때 다시 확인
+- [x] PRD "Decide Later" 10개 항목: 2026-11-04 결정 완료(`SERVICE.md` 5장 "미결 사항 결정", `PRD.md` "Decisions")
 - [ ] data.go.kr 두 API의 **오퍼레이션 경로**(7단계 실연동에 필요, 사용자가 확인 후 전달)
 - [ ] SMTP 정보(지금은 비워 둠. 이메일 실연동만 skip)
 - [ ] 이전 자동 수정 작업(Ralph)이 별도 작업 폴더에서 돌고 있음. 필요하면 중단
