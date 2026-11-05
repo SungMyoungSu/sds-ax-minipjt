@@ -23,6 +23,7 @@ from langgraph.prebuilt import InjectedState
 from langgraph_supervisor import create_supervisor
 
 from volunteer_agent.agents import AGENT_TOOLS, SUPERVISOR_PROMPT, build_agents
+from volunteer_agent.memory import memory_tools, open_store
 from volunteer_agent.config import Settings
 from volunteer_agent.llm import get_text, make_llm
 from volunteer_agent.rules import RuleEdits
@@ -80,12 +81,18 @@ def wire_tools(tools: list[BaseTool]) -> list[BaseTool]:
     return [bind_user_confirmation(t) if t.name == "confirm_rules" else t for t in tools]
 
 
-def compile_app(llm_for: Callable[[str], Any], tools: list[BaseTool], clock: AppClock, checkpointer=None):
-    """하위 Agent와 Supervisor를 조립해 컴파일한다."""
-    agents = build_agents(llm_for, wire_tools(tools), clock.today)
+def compile_app(llm_for: Callable[[str], Any], tools: list[BaseTool], clock: AppClock, checkpointer=None,
+                store=None):
+    """하위 Agent와 Supervisor를 조립해 컴파일한다. store가 있으면 선호 기억 도구(Python)를 붙인다."""
+    all_tools = wire_tools(tools)
+    if store is not None:
+        names = {t.name for t in all_tools}
+        all_tools += [t for t in memory_tools(store) if t.name not in names]
+    agents = build_agents(llm_for, all_tools, clock.today)
     supervisor = create_supervisor(agents, model=llm_for("supervisor"), prompt=SUPERVISOR_PROMPT,
                                    add_handoff_back_messages=True, output_mode="full_history")
-    return supervisor.compile(checkpointer=checkpointer if checkpointer is not None else InMemorySaver())
+    return supervisor.compile(checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
+                              store=store)
 
 
 def mcp_server_config(settings: Settings, clock: AppClock, api_mode: str = "live",
@@ -109,9 +116,13 @@ async def open_app(settings: Settings, clock: AppClock, *, llm_for: Callable[[st
         def llm_for(_role: str):
             return make_llm(settings)
     client = MultiServerMCPClient({"volunteer": mcp_server_config(settings, clock, api_mode, fixtures)})
-    async with client.session("volunteer") as session:
-        tools = await load_mcp_tools(session)
-        yield compile_app(llm_for, tools, clock, checkpointer)
+    store = open_store(settings)
+    try:
+        async with client.session("volunteer") as session:
+            tools = await load_mcp_tools(session)
+            yield compile_app(llm_for, tools, clock, checkpointer, store)
+    finally:
+        store.conn.close()
 
 
 async def build_app(settings: Settings, clock: AppClock, **kwargs: Any):
@@ -122,7 +133,7 @@ async def build_app(settings: Settings, clock: AppClock, **kwargs: Any):
     client = MultiServerMCPClient({"volunteer": mcp_server_config(settings, clock, kwargs.pop("api_mode", "live"),
                                                                   kwargs.pop("fixtures", None))})
     tools = await client.get_tools()
-    return compile_app(llm_for, tools, clock, kwargs.pop("checkpointer", None))
+    return compile_app(llm_for, tools, clock, kwargs.pop("checkpointer", None), open_store(settings))
 
 
 @dataclass

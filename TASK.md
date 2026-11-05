@@ -107,7 +107,7 @@
 - **완료 조건:** AC13(대화 부분) 통과, 실제 키로 `build_app()`이 한 번 응답
 - **참고:** `reference/final_scenario.py`, `reference/long_term_memory.py`(checkpointer)
 
-### [ ] 12. 장기 기억 (LangGraph Store)
+### [x] 12. 장기 기억 (LangGraph Store)
 - **만들 것:** 로컬 SQLite Store, namespace `("users", user_id)`, `save_preference`·`get_preferences` Python 도구(recommend_agent에 바인딩), 추천할 때 선호를 기본 조건으로 사용, `purge` 시 함께 삭제
 - **테스트:** AC18(새 대화에서 선호 사용)
 - **완료 조건:** AC18 통과

@@ -9,7 +9,9 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import StructuredTool
 
-from volunteer_agent.agents import AGENT_TOOLS, tools_for
+from langgraph.store.memory import InMemoryStore
+
+from volunteer_agent.agents import AGENT_TOOLS, PYTHON_TOOLS, tools_for
 from volunteer_agent.app import AppClock, ask, compile_app, open_app
 from volunteer_agent.config import load_settings
 from volunteer_agent.llm import has_llm_credentials
@@ -17,6 +19,7 @@ from volunteer_agent.mcp_server import TOOL_NAMES
 
 ROOT = Path(__file__).resolve().parents[1]
 ALL_TOOLS = [n for names in AGENT_TOOLS.values() for n in names]
+MCP_TOOLS = [n for n in ALL_TOOLS if n not in PYTHON_TOOLS]
 
 
 class ScriptedChat(BaseChatModel):
@@ -99,6 +102,9 @@ class StubTools:
     def all(self):
         return [self.make(n) for n in ALL_TOOLS]
 
+    def mcp(self):
+        return [self.make(n) for n in MCP_TOOLS]
+
 
 @pytest.fixture
 def fake_app(settings):
@@ -111,7 +117,7 @@ def fake_app(settings):
     }
     stubs = StubTools()
     clock = AppClock.create(settings, date(2026, 11, 4))
-    app = compile_app(lambda role: models[role], stubs.all(), clock)
+    app = compile_app(lambda role: models[role], stubs.mcp(), clock, store=InMemoryStore())
     return app, models, stubs, clock
 
 
@@ -126,7 +132,8 @@ def test_each_agent_gets_only_its_tools(fake_app):
     stubs = StubTools().all()
     for agent, names in AGENT_TOOLS.items():
         assert [t.name for t in tools_for(agent, stubs)] == names
-    assert sorted(ALL_TOOLS) == sorted(TOOL_NAMES)  # MCP 도구와 표가 일치
+    assert sorted(MCP_TOOLS) == sorted(TOOL_NAMES)  # MCP 도구와 표가 일치
+    assert set(PYTHON_TOOLS) <= set(AGENT_TOOLS["recommend_agent"])
     graph_nodes = app.get_graph(xray=1).nodes
     for agent in AGENT_TOOLS:
         assert any(n.startswith(agent) for n in graph_nodes)
