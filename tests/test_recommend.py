@@ -254,3 +254,61 @@ def test_live_1365_search():
     assert total > 0 and programs
     assert all(p.field_code == "0800" and p.sido_code == "6110000" for p in programs)
     assert all("1365.go.kr" in p.url for p in programs)
+
+
+# ---- 시군구(구) 단위 지역 필터 ----
+
+from volunteer_agent.recommend import load_gugun_codes, resolve_region  # noqa: E402
+
+
+@pytest.mark.parametrize("text, sido, gugun, local", [
+    ("서울 동작구", "6110000", "3190000", "동작구"),
+    ("동작구", "6110000", "3190000", "동작구"),          # 시도 없이 구만 말해도 코드표로 서울을 찾음
+    ("서울특별시 강남구", "6110000", "3220000", "강남구"),
+    ("서울시", "6110000", None, None),
+    ("서울", "6110000", None, None),
+    ("부산 해운대구", "6260000", None, "해운대구"),      # 코드표에 없는 시군구 → 이름으로 거름
+    ("경상남도 창원시", "6480000", None, "창원시"),
+    ("상관없음", None, None, None),
+])
+def test_resolve_region(text, sido, gugun, local):
+    r = resolve_region(text)
+    assert (r.sido, r.gugun, r.local_name) == (sido, gugun, local)
+
+
+def test_ambiguous_or_unknown_local_asks_sido():
+    with pytest.raises(InputError, match="어느 시도의 중구인가요"):
+        resolve_region("중구")
+    with pytest.raises(InputError, match="어느 시도의 수원시인가요"):
+        resolve_region("수원시")  # 코드표에 없고 시도도 없음 → 시도를 되묻는다
+    with pytest.raises(InputError, match="지역을 알 수 없습니다"):
+        resolve_region("아틀란티스")
+
+
+def test_seoul_gugun_table_has_25_verified_codes():
+    seoul = load_gugun_codes()["6110000"]
+    assert len(seoul) == 25 and seoul["동작구"] == "3190000" and seoul["강남구"] == "3220000"
+
+
+def test_gugun_filter_sends_schsign1_and_filters_items(api_settings):
+    c, fetcher = client(api_settings)
+    r = search_volunteer(c, SearchQuery(region="서울 강남구"), TODAY)
+    assert fetcher.calls[0]["schSido"] == "6110000" and fetcher.calls[0]["schSign1"] == "3220000"
+    assert r.items and all(x.program.gugun_code == "3220000" for x in r.items)
+    assert all("서울 강남구 지역" in x.reason for x in r.items)
+
+
+def test_dongjak_does_not_fall_back_to_whole_seoul(api_settings):
+    """'동작구'로 물었는데 서울 전역(강남 등)이 나오던 문제의 회귀 테스트. 녹화 응답에는 동작구 봉사가 없다."""
+    c, fetcher = client(api_settings)
+    r = search_volunteer(c, SearchQuery(region="동작구"), TODAY)
+    assert fetcher.calls[0]["schSign1"] == "3190000"
+    assert r.items == [] and any("서울 동작구 말고" in s for s in r.suggestions)
+
+
+def test_unmapped_local_filters_by_place_name(api_settings):
+    c, fetcher = client(api_settings)
+    r = search_volunteer(c, SearchQuery(region="부산 해운대구"), TODAY)
+    assert "schSign1" not in fetcher.calls[0]
+    assert [x.program.title for x in r.items] == ["해운대 해변 정화"]
+    assert any("시군구 코드표에 없어" in n for n in r.notes)

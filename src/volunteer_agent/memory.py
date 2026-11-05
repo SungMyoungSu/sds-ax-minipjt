@@ -16,7 +16,7 @@ from langgraph.store.sqlite import SqliteStore
 
 from volunteer_agent.config import Settings
 from volunteer_agent.errors import InputError
-from volunteer_agent.recommend import resolve_sido
+from volunteer_agent.recommend import resolve_region
 from volunteer_agent.type_codes import load_type_codes, map_policy_terms
 
 MEMORY_FILENAME = "memory.sqlite"
@@ -44,7 +44,7 @@ def save_preferences(store: BaseStore, region: str | None = None, available_days
     """주어진 항목만 기존 선호에 합쳐 저장한다. 값은 검증한 뒤 저장한다."""
     prefs = load_preferences(store)
     if region is not None:
-        resolve_sido(region)  # 모르는 지역이면 InputError
+        resolve_region(region)  # 모르는 지역이면 InputError(시군구만 말한 '동작구'도 허용)
         prefs["region"] = region.strip()
     if available_days is not None:
         days = sorted({int(d) for d in available_days})

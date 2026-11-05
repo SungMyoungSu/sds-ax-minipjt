@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import socket
 import urllib.error
@@ -48,6 +49,15 @@ _SIDO_ALIASES = {
 }
 SIDO_NAMES = {code: name for name, code in SIDO_CODES.items()}
 
+
+def load_gugun_codes() -> dict[str, dict[str, str]]:
+    """시도 코드 → {시군구 이름: 시군구 코드}(resources/gugun_codes.json, 실제 응답으로 확인한 것만)."""
+    text = resources.files("volunteer_agent").joinpath("resources", "gugun_codes.json").read_text(encoding="utf-8")
+    return json.loads(text)["sido"]
+
+
+_LOCAL_SUFFIXES = ("구", "시", "군")
+
 # 희망 전공 → 관련 분야 코드(학생 추천 정렬용, PRD 27)
 MAJOR_FIELDS: dict[str, list[str]] = {
     "간호": ["0500", "0100"], "의학": ["0500"], "의대": ["0500"], "보건": ["0500"], "약학": ["0500"],
@@ -84,6 +94,7 @@ class Program:
     youth_ok: bool
     url: str
     source_api: str = "1365"
+    gugun_code: str = ""  # 시군구 코드(gugunCd)
 
     @property
     def field_code(self) -> str | None:
@@ -109,7 +120,7 @@ class Program:
 
 @dataclass
 class SearchQuery:
-    region: str | None = None  # "서울", "서울 강남구" 등. 시도 단위로 거른다
+    region: str | None = None  # "서울", "서울 동작구", "동작구" 등. 시도와 시군구 단위로 거른다
     field_codes: list[str] = field(default_factory=list)  # 비어 있으면 분야 제한 없음
     company_rules_applied: bool = False  # field_codes가 확정된 회사 인정 분야에서 왔는지(추천 이유 표시용)
     start: date | None = None  # 활동 기간 조건
@@ -118,6 +129,7 @@ class SearchQuery:
     weekdays: list[int] | None = None  # 0=월 … 6=일. 예: 주말 [5, 6]
     keyword: str | None = None
     major: str | None = None  # 학생 희망 전공 → 관련 분야를 먼저 (PRD 27)
+    area_label: str | None = None  # 해석한 지역 이름(예: 서울 동작구), 추천 이유·안내용
     rules_unconfirmed: bool = False  # 회사 규칙 미확정: 회사 인정 분야 필터 없이 마감 임박 순, 안내 표시 (미결 결정 4)
 
 
@@ -223,6 +235,7 @@ def parse_programs(xml_text: str) -> tuple[list[Program], int]:
             program_start=_date(_text(it, "progrmBgnde")), program_end=_date(_text(it, "progrmEndde")),
             start_hour=_hour(_text(it, "actBeginTm")), end_hour=_hour(_text(it, "actEndTm")),
             status=_text(it, "progrmSttusSe"), youth_ok=_text(it, "yngbgsPosblAt") == "Y",
+            gugun_code=_text(it, "gugunCd"),
             url=_text(it, "url") or f"https://www.1365.go.kr/vols/P9210/partcptn/timeCptn.do?type=show&progrmRegistNo={pid}",
         ))
     return programs, total
@@ -284,7 +297,7 @@ class VolunteerClient:
 
     def list_programs(self, page: int = 1, rows: int = ROWS_PER_PAGE, field_code: str | None = None,
                       sido_code: str | None = None, youth_only: bool = False,
-                      keyword: str | None = None) -> tuple[list[Program], int]:
+                      keyword: str | None = None, gugun_code: str | None = None) -> tuple[list[Program], int]:
         s = self.settings
         if not s.data_go_kr_key:
             raise ApiError("DATA_GO_KR_KEY가 설정되지 않았습니다. data.go.kr에서 1365 봉사참여정보 API 활용신청 후 "
@@ -296,6 +309,8 @@ class VolunteerClient:
             params["upperClCode"] = field_code
         if sido_code:
             params["schSido"] = sido_code
+        if gugun_code:
+            params["schSign1"] = gugun_code  # 시군구 (2026-11-05 실제 호출로 확인)
         if youth_only:
             params["yngbgsPosblAt"] = "Y"
         if keyword:
@@ -322,16 +337,60 @@ class VolunteerClient:
 
 # ---- 추천 ----
 
-def resolve_sido(region: str | None) -> str | None:
-    """'서울 강남구', '경상남도 창원시' 같은 지역 표현 → 시도 코드. 모르면 InputError."""
+@dataclass
+class Region:
+    sido: str | None = None  # 시도 코드
+    gugun: str | None = None  # 시군구 코드(코드표에 있을 때)
+    local_name: str | None = None  # 사용자가 말한 시군구 이름(예: 동작구)
+
+    @property
+    def label(self) -> str | None:
+        parts = [SIDO_NAMES.get(self.sido, "") if self.sido else "", self.local_name or ""]
+        return " ".join(p for p in parts if p) or None
+
+
+# 여러 시도에 같은 이름이 있는 시군구(시도 없이 말하면 되묻는다)
+AMBIGUOUS_LOCAL = {"중구", "동구", "서구", "남구", "북구", "강서구"}
+
+
+def resolve_region(region: str | None) -> Region:
+    """'서울 동작구', '동작구', '부산 해운대구', '서울' → 시도·시군구. 시군구는 코드표에 있으면 코드로,
+    없으면 이름만 남겨 활동 장소·기관 이름으로 거른다. 시도를 모르면 InputError."""
     if not region or region.strip() in {"상관없음", "전국", "어디든"}:
-        return None
-    for word in re.split(r"\s+", region.strip()):
-        key = _SIDO_ALIASES.get(word, word)
-        for name, code in SIDO_CODES.items():
-            if key.startswith(name):
-                return code
-    raise InputError(f"지역을 알 수 없습니다({region}). 시도 이름(예: 서울, 경기, 부산)으로 알려 주세요.")
+        return Region()
+    words = re.split(r"\s+", region.strip())
+    local = next((w for w in words if len(w) >= 2 and w.endswith(_LOCAL_SUFFIXES) and resolve_sido_word(w) is None),
+                 None)
+    sido = next((c for c in (resolve_sido_word(w) for w in words) if c), None)
+    table = load_gugun_codes()
+    if sido is None and local:
+        owners = [code for code, gus in table.items() if local in gus]
+        if local in AMBIGUOUS_LOCAL or len(owners) != 1:
+            raise InputError(f"어느 시도의 {local}인가요? 시도 이름과 함께 알려 주세요(예: 서울 동작구, 경기 수원시).")
+        sido = owners[0]
+    if sido is None:
+        raise InputError(f"지역을 알 수 없습니다({region}). 시도 이름(예: 서울, 경기, 부산)으로 알려 주세요.")
+    gugun = table.get(sido, {}).get(local) if local else None
+    return Region(sido=sido, gugun=gugun, local_name=local)
+
+
+def resolve_sido_word(word: str) -> str | None:
+    """'서울', '서울시', '서울특별시', '경상남도' → 시도 코드. 시군구 이름('동작구', '수원시')이면 None."""
+    key = _SIDO_ALIASES.get(word, word)
+    for name, code in SIDO_CODES.items():
+        if key.startswith(name) and key[len(name):] in ("", "시", "특별시", "광역시", "특별자치시", "도", "특별자치도"):
+            return code
+    return None
+
+
+def resolve_sido(region: str | None) -> str | None:
+    """지역 표현 → 시도 코드(시군구만 말해도 코드표로 시도를 찾는다). 모르면 InputError."""
+    return resolve_region(region).sido
+
+
+def _local_stem(name: str) -> str:
+    """'동작구' → '동작'(장소 문자열에 '동작구'·'동작동'처럼 나와도 맞도록). 두 글자 이름은 그대로."""
+    return name[:-1] if len(name) > 2 else name
 
 
 def major_codes(major: str | None) -> list[str]:
@@ -344,12 +403,16 @@ def major_codes(major: str | None) -> list[str]:
     return codes
 
 
-def _eligible(p: Program, q: SearchQuery, sido: str | None, today: date) -> bool:
+def _eligible(p: Program, q: SearchQuery, sido: str | None, today: date, area: Region | None = None) -> bool:
     if p.status == "3":  # 모집완료 = 정원이 참
         return False
     if p.recruit_end is None or p.recruit_end < today:
         return False
     if sido and p.sido_code != sido:
+        return False
+    if area and area.gugun and p.gugun_code != area.gugun:
+        return False
+    if area and area.local_name and not area.gugun and _local_stem(area.local_name) not in f"{p.place} {p.organization} {p.title}":
         return False
     if q.field_codes and p.field_code not in q.field_codes:
         return False
@@ -375,7 +438,7 @@ def _reason(p: Program, q: SearchQuery, related: list[str], today: date) -> str:
     else:
         bits.append(f"{p.field_name} 분야")
     if q.region:
-        bits.append(f"{p.region} 지역")
+        bits.append(f"{q.area_label or p.region} 지역")
     if q.weekdays is not None:
         bits.append("가능한 요일에 진행")
     if p.recruit_end:
@@ -388,7 +451,7 @@ def _suggestions(q: SearchQuery) -> list[str]:
     if q.weekdays is not None:
         out.append("요일 조건을 빼고 다시 찾아볼까요?")
     if q.region:
-        out.append(f"{q.region} 말고 가까운 다른 지역이나 지역 상관없이 찾아볼까요?")
+        out.append(f"{q.area_label or q.region} 말고 가까운 다른 지역이나 지역 상관없이 찾아볼까요?")
     if q.start or q.end:
         out.append("활동 기간을 넓혀 볼까요?")
     if q.keyword:
@@ -403,7 +466,9 @@ def _suggestions(q: SearchQuery) -> list[str]:
 def search_volunteer(client: VolunteerClient, query: SearchQuery, today: date,
                      limit: int = MAX_RESULTS) -> SearchResult:
     """조건에 맞는 봉사를 최대 limit건 추천한다. API를 못 쓰면 샘플로 추천한다."""
-    sido = resolve_sido(query.region)
+    area = resolve_region(query.region)
+    sido = area.sido
+    query.area_label = area.label
     related = major_codes(query.major)
     filter_codes = query.field_codes
     result = SearchResult()
@@ -413,7 +478,8 @@ def search_volunteer(client: VolunteerClient, query: SearchQuery, today: date,
             fetched = 0
             for page in range(1, MAX_PAGES + 1):
                 items, total = client.list_programs(page=page, field_code=code, sido_code=sido,
-                                                    youth_only=query.youth_only, keyword=query.keyword)
+                                                    youth_only=query.youth_only, keyword=query.keyword,
+                                                    gugun_code=area.gugun)
                 for p in items:
                     programs.setdefault(p.program_id, p)
                 fetched += len(items)
@@ -425,7 +491,10 @@ def search_volunteer(client: VolunteerClient, query: SearchQuery, today: date,
 
     if query.rules_unconfirmed:
         result.notes.append("회사 규칙이 아직 확정되지 않아(규칙 미확정) 인정 분야 필터 없이 모집 마감이 가까운 순으로 보여 드립니다.")
-    eligible = [p for p in programs.values() if _eligible(p, query, sido, today)]
+    if area.local_name and not area.gugun:
+        result.notes.append(f"{area.label}은(는) 시군구 코드표에 없어 활동 장소·기관 이름에 '{_local_stem(area.local_name)}'이(가) "
+                            "들어간 봉사만 골랐습니다.")
+    eligible = [p for p in programs.values() if _eligible(p, query, sido, today, area)]
     eligible.sort(key=lambda p: (0 if p.field_code in related else 1, p.recruit_end or date.max, p.program_id))
     result.items = [Recommendation(p, _reason(p, query, related, today)) for p in eligible[:limit]]
     if not result.items:
