@@ -363,8 +363,10 @@ def _activity_line(a, store: Store) -> str:
 def log_activity(date: str | None = None, organization: str | None = None, hours: float | None = None,
                  type_code: str | None = None, end_date: str | None = None, content: str | None = None,
                  major_relevance: str | None = None, lesson: str | None = None, school_planned: bool = False,
-                 certificate_file: str | None = None, confirm_duplicate: bool = False) -> str:
-    """사용자가 실제로 한 봉사활동을 기록하고 상태(인정/확인서 대기/제외/규칙 미확정)와 남은 시간을 돌려준다.
+                 confirm_duplicate: bool = False) -> str:
+    """사용자가 실제로 한 봉사활동을 기록하고 활동 상태(인정/확인서 대기/제외/규칙 미확정)를 돌려준다.
+    남은 시간은 돌려주지 않는다. 기록한 뒤에는 get_progress로 남은 시간을 확인해 보여 준다.
+    확인서 파일이 함께 왔으면 기록한 뒤 돌려받은 활동 번호로 attach_certificate를 부른다.
 
     쓰는 경우: "오늘 요양원에서 3시간 봉사했어"처럼 이미 한 활동을 알려 줄 때. 필수 항목은 날짜, 기관, 시간, 분야다.
     빠진 항목은 None으로 두면 그 항목만 되묻는 안내가 온다(추측해서 채우지 않는다. 단 분야는 활동 내용으로 추정해 넣는다).
@@ -385,7 +387,6 @@ def log_activity(date: str | None = None, organization: str | None = None, hours
         major_relevance: 학생의 전공 연관성(학생이 승인한 한 줄)
         lesson: 학생이 직접 쓴 배운 점
         school_planned: 학교 교육계획에 따른 봉사이면 true
-        certificate_file: 함께 첨부할 확인서 파일 경로(pdf, jpg, png)
         confirm_duplicate: 같은 기록이 있다는 안내 뒤 사용자가 그래도 저장하라고 했을 때만 true
     """
     ctx = context()
@@ -393,14 +394,15 @@ def log_activity(date: str | None = None, organization: str | None = None, hours
         svc = RecordService(store, ctx.settings, ctx.today)
         inp = ActivityInput(start_date=_parse_date(date), organization=_blank(organization), hours=hours,
                             type_code=type_code, end_date=_parse_date(end_date, "끝난 날짜"), content=content,
-                            major_relevance=major_relevance, lesson=lesson, school_planned=school_planned,
-                            certificate_file=certificate_file)
+                            major_relevance=major_relevance, lesson=lesson, school_planned=school_planned)
         r = svc.log_activity(inp, confirm_duplicate=confirm_duplicate)
         if r.status == "missing_fields":
             return f"기록하려면 {', '.join(r.missing_labels)}을(를) 알려 주세요. (아직 저장하지 않았습니다)"
         if r.status == "duplicate":
             return (f"이미 같은 기록이 있습니다. 그래도 저장할까요? (기존 활동 #{r.duplicate_of}, 아직 저장하지 않았습니다)")
-        return f"기록했습니다. {_activity_line(r.activity, store)}\n{_progress_text(r.progress)}"
+        # 남은 시간은 get_progress가 맡는다(PRD 16: 기록 뒤 상태와 남은 시간 표시, 시나리오 S4-1)
+        return (f"기록했습니다. {_activity_line(r.activity, store)}\n"
+                "남은 시간은 get_progress로 확인해 함께 보여 주세요. 확인서가 있으면 attach_certificate로 붙입니다.")
 
 
 @mcp.tool()

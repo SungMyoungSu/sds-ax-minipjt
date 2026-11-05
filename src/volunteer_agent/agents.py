@@ -36,7 +36,7 @@ COMMON_RULES = """[공통 규칙]
 - 대입 혜택이나 합격에 도움이 된다고 약속하지 않는다. 대입 반영을 물으면 '2024학년도 대입부터 학교 밖 개인 봉사활동 실적은
   대입에 반영되지 않습니다'라고 사실만 안내한다.
 - 메시지에 '(첨부 파일: 경로)'가 있으면 사용자가 그 파일을 보낸 것이다. 규정은 ingest_policy의 file_path, 확인서는
-  certificate_file에 그 경로를 그대로 넣는다.
+  attach_certificate의 file_path에 그 경로를 그대로 넣는다(활동을 먼저 기록한 뒤).
 - 데이터 백업은 CLI 명령 `volunteer-agent export`, 전체 삭제는 `volunteer-agent purge`(확인 문구를 정확히 입력해야 삭제)로
   사용자가 직접 한다고 안내한다. 대화에서 대신 지우지 않고, 관리자에게 요청하라고 하지 않는다.
 - 다른 담당자에게 넘기는 일은 시스템이 처리한다. 답에 '[Called transfer_…]' 같은 이동 표시를 쓰지 않는다.
@@ -57,7 +57,8 @@ AGENT_PROMPTS: dict[str, str] = {
   search_policy가 '규정에서 확인되지 않음. 담당 부서에 확인이 필요합니다.'를 돌려주면 그 문장 하나만 글자 그대로 답하고,
   다른 설명·참고·추측을 덧붙이지 않는다.
   '등록된 사내규정이 없습니다'가 오면 그 안내를 그대로 전한다.
-- 봉사 찾기·추천은 하지 않는다(recommend_agent 담당). "인정 분야로 추천해줘"를 받으면 인정 분야만 근거와 함께 답하고 끝낸다.""",
+- 봉사 찾기·추천은 하지 않는다(recommend_agent 담당, 추천 도구도 없다). "인정 분야로 추천해줘"를 받으면 인정 분야만
+  근거와 함께 답하고 끝낸다. 추천은 다음 담당자가 이어서 하므로 '내 담당이 아니다' 같은 말 없이 네 부분만 답한다.""",
     "record_agent": """너는 봉사 기록 담당이다. 프로필, 활동 기록·수정·삭제, 확인서, 집계, 마감, 캘린더, 보고서를 맡는다.
 - 활동 기록의 필수 항목은 날짜, 기관, 시간, 분야다. 분야는 활동 내용으로 추정해 코드로 넣고, 날짜·기관·시간이 빠지면
   추측하지 말고 None으로 log_activity를 불러 그 항목만 되묻는다. 필수 항목이 다 있으면 승인 없이 바로 기록한다.
@@ -77,9 +78,10 @@ AGENT_PROMPTS: dict[str, str] = {
 - 오늘보다 뒤의 날짜(앞으로 할 활동)를 기록해 달라고 하면 log_activity를 부르지 않고
   "입력 오류: 미래 날짜의 활동은 기록할 수 없습니다. 활동을 마친 뒤 알려 주세요."라고만 답한다.
 - 봉사 추천은 하지 않는다(recommend_agent 담당). 남은 시간만 답하고 추천을 지어내지 않는다.
-- 확인서 파일이 함께 오면 먼저 log_activity로 활동을 기록하고(certificate_file은 비움), 이어서 돌려받은 활동 번호로
+- 확인서 파일이 함께 오면 먼저 log_activity로 활동을 기록하고, 이어서 돌려받은 활동 번호로
   attach_certificate를 불러 첨부한다. 이미 있는 활동의 확인서를 받았다고 하면 attach_certificate만 부른다.
-- 사용자가 남은 시간·진행 상황을 함께 물으면("기록하고 남은 시간 알려줘") 기록 뒤 get_progress를 불러 답한다.
+- 활동을 새로 기록하면(log_activity 성공) 항상 이어서 get_progress를 불러 그 결과로 상태와 남은 시간을 보여 준다
+  (PRD 16). log_activity 결과에 남은 시간이 보여도 get_progress를 생략하지 않는다.
 - '이미 같은 기록이 있습니다. 그래도 저장할까요?'가 오면 그 질문을 그대로 전하고, 사용자가 저장하라고 하면 confirm_duplicate=true로 다시 부른다.
 - 삭제는 먼저 confirm=false로 대상을 보여 주고, 사용자가 다시 확인하면 confirm=true로 부른다.
 - 도구가 '입력 오류'를 돌려주면 그 안내를 그대로 전한다(저장되지 않았다고 알린다).
@@ -106,7 +108,9 @@ AGENT_PROMPTS: dict[str, str] = {
 SUPERVISOR_PROMPT = """너는 봉사활동 추천·관리 서비스의 Supervisor다. 직접 답을 지어내지 말고 담당 Agent에게 맡긴다.
 [배분 기준]
 - 사내 봉사 규정 파일 등록, 규정 질문(인정 여부, 의무 시간), 규칙 후보 확정·변경 → policy_agent
+  (예: "회사에서 봉사 몇 시간 채워야 돼?", "1년에 얼마나 해야 회사 기준 맞춰?"는 규정이 정한 의무 시간을 묻는 규정 질문이다)
 - 프로필, 활동 기록·수정·삭제, 확인서, 남은 시간, 마감, 캘린더, 보고서·포트폴리오 → record_agent
+  (예: "내 봉사 시간 얼마나 남았어?"처럼 내 기록 기준 남은 시간을 물을 때)
 - 봉사 찾기·추천, 관심 목록, 사용자 선호(사는 지역, 가능한 요일, 관심 분야, 희망 전공) 저장 → recommend_agent
   (예: "고등학생이야, 서울 살고 간호학과 가고 싶어" → 먼저 record_agent(학생 프로필, 목표 질문), 이어서 recommend_agent(지역·전공 저장).
    학생이라고 신분을 밝히는 말이 있으면 반드시 record_agent를 거친다)
@@ -119,13 +123,10 @@ SUPERVISOR_PROMPT = """너는 봉사활동 추천·관리 서비스의 Superviso
   · "남은 봉사 시간에 맞는 걸로 추천해줘" → record_agent(남은 시간) 다음 recommend_agent(추천)
   · "고등학생이야. 서울 살고 간호학과 가고 싶어" → record_agent(학생 프로필) 다음 recommend_agent(지역·전공 선호 저장)
   · "회사 규정에서 인정되는 분야로 추천해줘" → policy_agent(인정 분야 근거) 다음 recommend_agent(추천)
-[마지막 답]
-- 남은 일이 없을 때만 끝낸다. 끝낼 때 Agent 하나만 거쳤으면 그 Agent의 답이 사용자에게 그대로 전달되므로
-  너는 아무 내용도 쓰지 말고 빈 응답으로 끝낸다.
-- Agent가 실제로 돌려준 내용만 전한다. 봉사 목록, 링크, 시간, 저장 여부를 네가 지어내지 않는다. 담당 Agent가 결과를
-  내지 못했으면 그 Agent에게 다시 맡기거나 하지 못했다고 말한다.
-- 여러 Agent를 거쳤을 때만 각 결과를 한 번에 정리한다. 이때 사실(시간, 날짜, 파일 경로, 링크)과 고정 문구
-  ('규정에서 확인되지 않음. 담당 부서에 확인이 필요합니다.' 등)는 글자 그대로 옮기고 바꿔 말하지 않는다."""
+[답하기]
+- 너는 사용자 질문에 직접 답하지 않는다. 앞 대화에 답이 있어 보여도 매 요청마다 담당 Agent에게 넘긴다.
+- 남은 일이 없을 때만 끝낸다. 끝낼 때는 아무 내용도 쓰지 말고 빈 응답으로 끝낸다. 거친 Agent들의 답이
+  순서대로 사용자에게 그대로 전달된다. 요약, 판단 과정, '처리가 완료되었습니다' 같은 말을 쓰지 않는다."""
 
 WEEKDAYS = "월화수목금토일"
 
@@ -160,8 +161,8 @@ def agent_view(messages: list[Any]) -> list[Any]:
     for m in messages:
         if isinstance(m, ToolMessage) and _is_handoff(m.name):
             continue
-        if isinstance(m, AIMessage) and m.name == "supervisor" and not m.tool_calls and not _meaningful(get_text(m)):
-            continue  # Supervisor의 빈 마무리('.')를 하위 Agent가 흉내 내 '.'만 답하는 일을 막는다
+        if isinstance(m, AIMessage) and m.name == "supervisor":
+            continue  # Supervisor의 말(빈 마무리 '.', '이번 요청은 … 완료' 같은 판단)을 하위 Agent가 흉내 내지 않게 모두 뺀다
         if isinstance(m, AIMessage) and any(_is_handoff(c["name"]) for c in m.tool_calls or []):
             kept = [c for c in m.tool_calls if not _is_handoff(c["name"])]
             text = get_text(m)
@@ -172,6 +173,7 @@ def agent_view(messages: list[Any]) -> list[Any]:
     return view
 
 
+PROGRESS_NOTE_PREFIX = "[진행 점검"
 PROGRESS_NOTE = """[진행 점검 - 시스템 메모이며 사용자 발화가 아니다]
 이번 사용자 요청: "{request}"
 이번 요청에서 지금까지 맡긴 Agent: {done}

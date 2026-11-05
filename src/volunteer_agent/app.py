@@ -19,13 +19,14 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.prebuilt import InjectedState
 from langgraph_supervisor import create_supervisor
 
-from volunteer_agent.agents import AGENT_TOOLS, build_agents, supervisor_prompt
+from volunteer_agent.agents import AGENT_TOOLS, PROGRESS_NOTE_PREFIX, build_agents, supervisor_prompt
 from volunteer_agent.memory import memory_tools, open_store
 from volunteer_agent.config import Settings
 from volunteer_agent.llm import get_text, make_llm
@@ -84,6 +85,48 @@ def wire_tools(tools: list[BaseTool]) -> list[BaseTool]:
     return [bind_user_confirmation(t) if t.name == "confirm_rules" else t for t in tools]
 
 
+class RouteFirstChat(BaseChatModel):
+    """Supervisor 모델 감싸개. 턴 시작(마지막 메시지가 사용자 발화)에는 tool_choice="any"로 불러
+    반드시 transfer_to_* 하나를 고르게 한다. 하위 Agent가 돌아온 뒤에는 보통대로 불러 빈 응답으로 끝낼 수 있다.
+
+    Supervisor가 앞 대화 내용으로 직접 답해 담당 Agent·도구를 건너뛰는 일이 있었다(시나리오 S2-4).
+    프롬프트 메모로 막으려 하니 메모를 새 요청으로 받아 오히려 직접 답해서(17/26), 모델 호출 옵션으로 강제한다."""
+
+    inner: Any
+
+    @property
+    def _llm_type(self) -> str:
+        return "route-first"
+
+    def bind_tools(self, tools: Any, **kwargs: Any):
+        from langchain_core.utils.function_calling import convert_to_openai_tool
+
+        kwargs.pop("tool_choice", None)
+        return self.bind(tools=[convert_to_openai_tool(t) for t in tools], **kwargs)
+
+    def _pick(self, messages: list[Any], tools: list[dict] | None, kwargs: dict) -> Any:
+        if not tools:
+            return self.inner
+        last = messages[-1] if messages else None
+        # 하위 Agent가 돌아온 뒤 붙는 진행 점검 메모(사람 메시지 형태)는 턴 시작이 아니다. 여기서 강제하면 끝낼 수 없다.
+        turn_start = isinstance(last, HumanMessage) and not get_text(last).startswith(PROGRESS_NOTE_PREFIX)
+        extra = {k: v for k, v in kwargs.items() if k in ("parallel_tool_calls",)}
+        return self.inner.bind_tools(tools, tool_choice="any", **extra) if turn_start \
+            else self.inner.bind_tools(tools, **extra)
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        model = self._pick(messages, kwargs.pop("tools", None), kwargs)
+        return ChatResult(generations=[ChatGeneration(message=model.invoke(messages))])
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        model = self._pick(messages, kwargs.pop("tools", None), kwargs)
+        return ChatResult(generations=[ChatGeneration(message=await model.ainvoke(messages))])
+
+
 def compile_app(llm_for: Callable[[str], Any], tools: list[BaseTool], clock: AppClock, checkpointer=None,
                 store=None):
     """하위 Agent와 Supervisor를 조립해 컴파일한다. store가 있으면 선호 기억 도구(Python)를 붙인다."""
@@ -92,7 +135,7 @@ def compile_app(llm_for: Callable[[str], Any], tools: list[BaseTool], clock: App
         names = {t.name for t in all_tools}
         all_tools += [t for t in memory_tools(store) if t.name not in names]
     agents = build_agents(llm_for, all_tools, clock.today)
-    supervisor = create_supervisor(agents, model=llm_for("supervisor"), prompt=supervisor_prompt,
+    supervisor = create_supervisor(agents, model=RouteFirstChat(inner=llm_for("supervisor")), prompt=supervisor_prompt,
                                    add_handoff_back_messages=True, output_mode="full_history")
     return supervisor.compile(checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
                               store=store)
@@ -202,8 +245,7 @@ async def ask(app: Any, text: str, thread_id: str, callbacks: list | None = None
             agent = tc["name"].removeprefix("transfer_to_")
             if tc["name"].startswith("transfer_to_") and agent in AGENT_TOOLS and agent not in agents:
                 agents.append(agent)
-    # 하위 Agent 하나만 거쳤으면 그 Agent의 답을 그대로 쓴다(Supervisor가 판단 과정 등을 덧붙여도 무시)
-    answer = final_answer([m for m in new if getattr(m, "name", None) != "supervisor"]) if len(agents) == 1 else ""
+    answer = agents_answer(new, agents)
     turn = Turn(answer=answer or final_answer(new), messages=new, agents=agents, tools=recorder.names)
     if tracer is not None:
         _trace_turn_end(tracer, thread_id, turn, started)
@@ -213,6 +255,19 @@ async def ask(app: Any, text: str, thread_id: str, callbacks: list | None = None
 def _trace_turn_end(tracer: Any, thread_id: str, turn: Turn, started: float) -> None:
     tracer.write("turn_end", thread_id=thread_id, agents=turn.agents, tools=turn.tools, refusal=turn.refusal,
                  output=tracer._sum(turn.answer), latency_s=round(time.perf_counter() - started, 3))
+
+
+def agents_answer(messages: list[Any], agents: list[str]) -> str:
+    """하위 Agent를 거친 턴의 답: 거친 순서대로 각 Agent의 마지막 답을 잇는다.
+
+    Supervisor의 요약은 쓰지 않는다. 여러 Agent를 거친 턴에서 Supervisor가 실제 결과(추천 목록·링크) 대신
+    '모든 처리가 완료되었습니다' 같은 요약으로 덮어쓰는 일이 있어서(시나리오 S3-1) 사실은 Agent의 답 그대로 전한다."""
+    parts = []
+    for agent in agents:
+        text = final_answer([m for m in messages if getattr(m, "name", None) == agent])
+        if text and text not in parts:
+            parts.append(text)
+    return "\n\n".join(parts)
 
 
 _HANDOFF_NOTE = re.compile(r"\[Called transfer_\w+\]")

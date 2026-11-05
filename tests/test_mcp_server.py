@@ -106,7 +106,9 @@ def test_employee_flow_through_tools(env, tmp_path):
 
     cert = tmp_path / "certificate.pdf"
     cert.write_bytes(b"%PDF-1.4")
-    out = call("log_activity", date="2026-10-31", organization="복지관", hours=2.5, type_code="0100", certificate_file=str(cert))
+    out = call("log_activity", date="2026-10-31", organization="복지관", hours=2.5, type_code="0100")
+    assert "활동 #2" in out and "get_progress" in out and "남은 시간 " not in out  # 남은 시간은 get_progress 담당
+    out = call("attach_certificate", activity_id=2, file_path=str(cert))
     assert "인정" in out and "남은 시간 5.5시간" in out
     out = call("log_activity", date="2026-11-03", organization="한강공원", hours=2, type_code="0800")
     assert out.startswith("이미 같은 기록이 있습니다. 그래도 저장할까요?")
@@ -146,7 +148,8 @@ def test_student_profile_and_type_lock(env):
     assert "희망 전공(간호학)" in out and "도서관 행사" not in out  # 청소년 불가 항목 제외
     out = call("log_activity", date="2026-10-10", organization="요양원", hours=3, type_code="0500",
                major_relevance="간호 직무 이해", lesson="경청")
-    assert "전공 연계 활동 1건" in out
+    assert "활동 #1" in out
+    assert "전공 연계 활동 1건" in call("get_progress")  # 집계는 get_progress 담당
     assert ".pdf" in call("generate_report")
 
 

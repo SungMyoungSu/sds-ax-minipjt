@@ -289,14 +289,15 @@ def test_agent_view_hides_handoff_messages():
     assert len(view) == 4
 
 
-def test_agent_view_drops_supervisor_empty_closings():
+def test_agent_view_drops_all_supervisor_text():
     """Supervisor의 빈 마무리('.')가 쌓이면 하위 Agent가 도구 없이 '.'만 답한다(S3-1 회귀)."""
     from volunteer_agent.agents import agent_view
 
     history = [HumanMessage(content="기록해줘"), AIMessage(content="기록했습니다", name="record_agent"),
                AIMessage(content=".", name="supervisor"), AIMessage(content="", name="supervisor"),
                AIMessage(content="두 결과를 정리하면 …", name="supervisor"), HumanMessage(content="추천해줘")]
-    assert [m.content for m in agent_view(history)] == ["기록해줘", "기록했습니다", "두 결과를 정리하면 …", "추천해줘"]
+    # Supervisor의 말은 빈 마무리든 판단·요약이든 모두 뺀다('이번 요청은 … 완료' 흉내 방지)
+    assert [m.content for m in agent_view(history)] == ["기록해줘", "기록했습니다", "추천해줘"]
 
 
 def test_supervisor_prompt_adds_progress_note_only_after_agent_returns():
@@ -304,7 +305,7 @@ def test_supervisor_prompt_adds_progress_note_only_after_agent_returns():
 
     req = HumanMessage(content="남은 봉사 시간에 맞는 걸로 추천해줘")
     first = supervisor_prompt({"messages": [req]})
-    assert isinstance(first[0], SystemMessage) and first[-1] is req  # 처음에는 메모 없음
+    assert isinstance(first[0], SystemMessage) and first[-1] is req  # 턴 시작에는 메모 없음(강제는 모델 옵션으로)
     history = [req,
                AIMessage(content="", tool_calls=[{"name": "transfer_to_record_agent", "args": {}, "id": "h1"}],
                          name="supervisor"),
@@ -333,3 +334,38 @@ def test_single_agent_answer_wins_over_supervisor_text(settings):
                       store=InMemoryStore())
     t = asyncio.run(ask(app, "안녕", "t-chatty"))
     assert t.agents == ["general_agent"] and t.answer == "봉사 규정 등록, 기록, 추천을 도와드립니다."
+
+
+def test_multi_agent_turn_answer_joins_agent_answers_not_supervisor_summary():
+    """여러 Agent를 거친 턴은 Supervisor 요약 대신 Agent 답을 순서대로 잇는다(S3-1 회귀)."""
+    from volunteer_agent.app import agents_answer
+
+    msgs = [HumanMessage(content="인정 분야로 추천해줘"),
+            AIMessage(content="인정 분야는 환경·사회복지입니다. [출처: a.md 제3조]", name="policy_agent"),
+            AIMessage(content="1. 플로깅 https://1365.go.kr/x", name="recommend_agent"),
+            AIMessage(content="모든 처리가 완료되었습니다.", name="supervisor")]
+    out = agents_answer(msgs, ["policy_agent", "recommend_agent"])
+    assert out == "인정 분야는 환경·사회복지입니다. [출처: a.md 제3조]\n\n1. 플로깅 https://1365.go.kr/x"
+    assert agents_answer(msgs, []) == ""
+
+
+class ChoiceRecorder(ScriptedChat):
+    """bind_tools에 넘어온 tool_choice를 기록하는 가짜 모델."""
+
+    choices: list = []
+
+    def bind_tools(self, tools, **kwargs):
+        self.choices.append(kwargs.get("tool_choice"))
+        return self
+
+
+def test_route_first_forces_handoff_only_at_turn_start(settings):
+    """턴 시작에는 tool_choice='any'로 이동 도구를 강제하고, Agent가 돌아온 뒤에는 강제하지 않는다(S2-4 회귀)."""
+    sup = ChoiceRecorder(handler=supervisor_handler, seen=[], choices=[])
+    models = {r: ScriptedChat(handler=general_handler, seen=[]) for r in AGENT_TOOLS}
+    models["supervisor"] = sup
+    app = compile_app(lambda r: models[r], StubTools().mcp(), AppClock.create(settings, date(2026, 11, 4)),
+                      store=InMemoryStore())
+    t = asyncio.run(ask(app, "안녕", "t-route"))
+    assert t.agents == ["general_agent"]
+    assert sup.choices == ["any", None]  # 첫 호출만 강제
