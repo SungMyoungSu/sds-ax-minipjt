@@ -35,3 +35,20 @@ def make_llm(settings: Settings, model: str | None = None):
 
 def has_llm_credentials(settings: Settings) -> bool:
     return bool(settings.llm_model and settings.aws_access_key_id and settings.aws_secret_access_key)
+
+
+QUOTA_ERROR_NAMES = {"ThrottlingException", "ServiceQuotaExceededException", "TooManyRequestsException"}
+QUOTA_ERROR_TEXT = ("Too many tokens", "Too many requests", "ThrottlingException", "Rate exceeded")
+
+
+def is_quota_error(exc: BaseException) -> bool:
+    """Bedrock 사용 한도 초과(분당·일일 토큰, 요청 수)인가. 감싼 예외(__cause__, __context__)까지 본다.
+    botocore가 이미 여러 번 재시도한 뒤라, 평가 실행기는 이 오류를 만나면 남은 문항을 돌리지 않고 멈춘다."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if type(current).__name__ in QUOTA_ERROR_NAMES or any(t in str(current) for t in QUOTA_ERROR_TEXT):
+            return True
+        current = current.__cause__ or current.__context__
+    return False

@@ -29,6 +29,9 @@ def main() -> int:
     rows = asyncio.run(run_judge(items, settings, default_runtime(), judge_llm))
     report, code = judge_report(rows)
     print(report)
+    if any(r.reasoning.startswith("실행하지 않음") for r in rows):
+        print("중단: Bedrock 사용 한도 초과. 한도가 풀린 뒤 다시 실행하세요.")
+        return 3
     return code
 
 

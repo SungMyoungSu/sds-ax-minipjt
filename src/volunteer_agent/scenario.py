@@ -21,6 +21,7 @@ import yaml
 
 from volunteer_agent.config import Settings
 from volunteer_agent.guards import REFUSALS
+from volunteer_agent.llm import is_quota_error
 from volunteer_agent.masking import mask_exception, mask_secrets
 from volunteer_agent.tracing import FileTracer, read_trace, trace_path
 
@@ -28,6 +29,10 @@ ROOT = Path(__file__).resolve().parents[2]
 EXPECT_KEYS = {"agents", "tools", "no_tools", "not_tools", "contains", "contains_any", "not_contains", "refusal",
                "not_contains_env", "state"}
 STEP_KEYS = {"id", "input", "attach", "today", "run", "new_thread", "expect"}
+QUOTA_REASON = "Bedrock 사용 한도 초과로 중단"
+SKIPPED_REASON = "실행하지 않음: Bedrock 사용 한도 초과"
+EXIT_QUOTA = 3  # 사용 한도 초과로 평가를 끝까지 돌리지 못함(판정 실패와 구분)
+
 ENV_FIELDS = {  # not_contains_env 이름 → Settings 필드
     "DATA_GO_KR_KEY": "data_go_kr_key", "AWS_SECRET_ACCESS_KEY": "aws_secret_access_key",
     "AWS_ACCESS_KEY_ID": "aws_access_key_id", "AWS_SESSION_TOKEN": "aws_session_token",
@@ -266,6 +271,7 @@ class ScenarioReport:
     name: str
     results: list[StepResult]
     trace_copy: Path | None = None
+    aborted: bool = False  # 사용 한도 초과로 중간에 멈춤
 
     @property
     def passed(self) -> int:
@@ -292,6 +298,7 @@ async def run_scenario(scenario: Scenario, base: Settings, runtime: Any, *, say:
     guard = runtime.make_guard(settings)
     tpath = trace_path(settings)
     results: list[StepResult] = []
+    aborted = False
     say(f"\n=== {scenario.name} ({len(scenario.steps)}단계, DATA_DIR {data_dir}) ===")
     try:
         async with runtime.open_app(settings, clock, scenario.api_mode) as app:
@@ -322,7 +329,11 @@ async def run_scenario(scenario: Scenario, base: Settings, runtime: Any, *, say:
                     state = read_state(settings, scenario.user_type, clock.today(), state_keys) if state_keys else {}
                     reasons = judge(step.expect, obs, state, env_values)
                 except Exception as exc:  # noqa: BLE001 - 단계 실패로 기록하고 다음 단계로
-                    reasons = [f"실행 오류: {mask_exception(exc, secrets)}"]
+                    if is_quota_error(exc):  # 남은 단계도 같은 오류로 재시도만 반복하므로 여기서 멈춘다
+                        aborted = True
+                        reasons = [QUOTA_REASON]
+                    else:
+                        reasons = [f"실행 오류: {mask_exception(exc, secrets)}"]
                 seconds = (datetime.now() - started).total_seconds()
                 result = StepResult(scenario.name, step.id, reasons, mask_secrets(answer, secrets), seconds)
                 results.append(result)
@@ -330,13 +341,19 @@ async def run_scenario(scenario: Scenario, base: Settings, runtime: Any, *, say:
                              reasons=reasons, latency_s=round(seconds, 3))
                 mark = "PASS" if result.passed else "FAIL"
                 say(f"[{mark}] {step.id} ({seconds:.1f}s)" + ("" if result.passed else " - " + "; ".join(reasons)))
-                if show_answers or not result.passed:
+                if (show_answers or not result.passed) and not aborted:
                     say("       답변: " + " ".join(result.answer.split())[:300])
+                if aborted:
+                    rest = scenario.steps[n:]
+                    results += [StepResult(scenario.name, st.id, [SKIPPED_REASON]) for st in rest]
+                    if rest:
+                        say(f"[중단] 남은 {len(rest)}단계는 실행하지 않았습니다({', '.join(st.id for st in rest)}).")
+                    break
     finally:
         copy = _save_trace(base, scenario.name, tpath)
         if not keep and work_dir is None:
             shutil.rmtree(data_dir, ignore_errors=True)
-    report = ScenarioReport(scenario.name, results, copy)
+    report = ScenarioReport(scenario.name, results, copy, aborted)
     say(f"--- {scenario.name}: {report.passed}/{len(results)} 통과" + (f", trace {copy}" if copy else ""))
     return report
 
@@ -354,12 +371,21 @@ def _save_trace(base: Settings, name: str, tpath: Path) -> Path | None:
 async def run_all(target: Path, base: Settings, runtime: Any, *, say: Callable[[str], None] = print,
                   keep: bool = False, show_answers: bool = False) -> list[ScenarioReport]:
     scenarios = [load_scenario(p) for p in scenario_files(target)]  # 형식 오류는 실행 전에 모두 확인
-    reports = [await run_scenario(s, base, runtime, say=say, keep=keep, show_answers=show_answers)
-               for s in scenarios]
+    reports: list[ScenarioReport] = []
+    for s in scenarios:
+        if reports and reports[-1].aborted:  # 한도가 풀리기 전에는 다음 시나리오도 실패하므로 돌리지 않는다
+            reports.append(ScenarioReport(s.name, [StepResult(s.name, st.id, [SKIPPED_REASON]) for st in s.steps],
+                                          aborted=True))
+            say(f"\n=== {s.name}: 실행하지 않음(Bedrock 사용 한도 초과) ===")
+            continue
+        reports.append(await run_scenario(s, base, runtime, say=say, keep=keep, show_answers=show_answers))
     total = sum(len(r.results) for r in reports)
     passed = sum(r.passed for r in reports)
     say("\n=== 결과 ===")
     for r in reports:
         say(f"{r.name}: {r.passed}/{len(r.results)}")
     say(f"전체: {passed}/{total} 통과")
+    if any(r.aborted for r in reports):
+        skipped = sum(1 for r in reports for x in r.results if x.reasons == [SKIPPED_REASON])
+        say(f"중단: Bedrock 사용 한도 초과로 {skipped}단계를 실행하지 않았습니다. 한도가 풀린 뒤 다시 실행하세요.")
     return reports

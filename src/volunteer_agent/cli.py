@@ -284,7 +284,7 @@ def quiet_library_noise() -> None:
 
 
 def run_scenarios(settings: Settings, args: argparse.Namespace, console: Console, runtime: Runtime | None) -> int:
-    """시나리오 평가. 모든 단계가 통과하면 0, 하나라도 실패하면 1, 형식·설정 오류는 2."""
+    """시나리오 평가. 모든 단계가 통과하면 0, 하나라도 실패하면 1, 형식·설정 오류는 2, Bedrock 사용 한도로 중단되면 3."""
     from volunteer_agent.scenario import ScenarioError, run_all
 
     if runtime is None:
@@ -300,6 +300,10 @@ def run_scenarios(settings: Settings, args: argparse.Namespace, console: Console
     except ScenarioError as exc:
         console.say(f"시나리오 형식 오류: {exc}")
         return 2
+    from volunteer_agent.scenario import EXIT_QUOTA
+
+    if any(r.aborted for r in reports):
+        return EXIT_QUOTA
     return 0 if all(r.passed == len(r.results) for r in reports) else 1
 
 

@@ -237,3 +237,50 @@ def test_ac16_cli_scenario_fail_path_exit_code_1(settings, tmp_path, monkeypatch
 def test_cli_scenario_format_error_exit_2(settings, tmp_path):
     code, out, _ = run_cli_scenario(settings, tmp_path, "name: x\nuser_type: employee\ntoday: '2026-11-04'\n")
     assert code == 2 and "시나리오 형식 오류" in out and "'steps'" in out
+
+
+# ---- Bedrock 사용 한도 초과: 남은 단계·시나리오를 돌리지 않고 멈춤 ----
+
+class ThrottlingException(Exception):
+    pass
+
+
+def test_is_quota_error_detects_wrapped_throttling():
+    from volunteer_agent.llm import is_quota_error
+
+    try:
+        try:
+            raise ThrottlingException("Too many tokens per day, please wait before trying again.")
+        except ThrottlingException as inner:
+            raise RuntimeError("graph failed") from inner
+    except RuntimeError as outer:
+        assert is_quota_error(outer)
+    assert not is_quota_error(ValueError("입력 오류"))
+
+
+def test_scenario_stops_on_quota_and_skips_rest(settings, tmp_path, monkeypatch):
+    monkeypatch.chdir(ROOT)
+    fake = FakeRuntime()
+    calls = {"n": 0}
+    original = fake.models["supervisor"].handler
+
+    def throttled(messages):
+        calls["n"] += 1
+        if any(getattr(m, "content", "") == "응, 확정해" for m in messages):
+            raise ThrottlingException("Too many tokens per day, please wait before trying again.")
+        return original(messages)
+
+    fake.models["supervisor"].handler = throttled
+    (tmp_path / "a.yaml").write_text(PASSING, encoding="utf-8")
+    (tmp_path / "b.yaml").write_text(PASSING.replace("name: mini", "name: second"), encoding="utf-8")
+    out = io.StringIO()
+    code = main(["scenario", str(tmp_path)], stdin=io.StringIO(), stdout=out, settings=settings,
+                runtime=fake.runtime())
+    text = out.getvalue()
+    assert code == 3, text
+    assert "[PASS] A1" in text and "[PASS] A2" in text
+    assert "[FAIL] A3" in text and "Bedrock 사용 한도 초과로 중단" in text
+    assert "[중단] 남은 3단계는 실행하지 않았습니다(A4, A5, A6)" in text
+    assert "=== second: 실행하지 않음(Bedrock 사용 한도 초과) ===" in text
+    assert "전체: 2/12 통과" in text and "9단계를 실행하지 않았습니다" in text
+    assert len(fake.opened) == 1  # 두 번째 시나리오는 앱도 열지 않음

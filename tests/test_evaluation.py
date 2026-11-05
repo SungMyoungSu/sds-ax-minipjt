@@ -201,3 +201,23 @@ def test_check_prints_three_results_and_trace_path(settings):
     assert "-> OK (기대: 차단, 실제: 차단)" in text and "-> OK (기대: 통과, 실제: 통과)" in text
     assert REFUSALS["injection"] in text
     assert "trace: " in text and "eval_runs" in text
+
+
+def test_run_eval_stops_on_quota(settings):
+    from test_scenario import ThrottlingException
+
+    fake = FakeRuntime()
+    original = fake.models["supervisor"].handler
+
+    def throttled(messages):
+        if any("남았어" in str(getattr(m, "content", "")) for m in messages):
+            raise ThrottlingException("Too many tokens per day")
+        return original(messages)
+
+    fake.models["supervisor"].handler = throttled
+    results, _ = asyncio.run(run_eval(CASES, settings, fake.runtime()))
+    assert len(results) == 12
+    aborted = [r for r in results if r.status == "aborted"]
+    assert aborted and aborted[0].question == "내 봉사 시간 얼마나 남았어?" and len(aborted) == 7
+    text, code = eval_report(results)
+    assert code == 1 and "실행하지 않음 7문항 (Bedrock 사용 한도 초과" in text and "채점 제외" not in text

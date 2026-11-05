@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from volunteer_agent.config import Settings
 from volunteer_agent.guards import REFUSALS
+from volunteer_agent.llm import is_quota_error
 from volunteer_agent.masking import mask_exception, mask_secrets
 from volunteer_agent.policy import NO_EVIDENCE
 from volunteer_agent.tracing import FileTracer, read_trace, trace_path
@@ -245,6 +246,10 @@ async def run_eval(cases: list[dict], base: Settings, runtime: Any,
                 asked = await session.ask(str(case.get("question", "")), mark={"case": i, "type": case.get("type")})
                 passed, detail, status = judge_case(case, asked)
             except Exception as exc:  # noqa: BLE001
+                if is_quota_error(exc):  # 남은 문항도 실패하므로 멈추고 채점 제외로 표시
+                    results += [CaseResult(str(c.get("question")), str(c.get("type")), False,
+                                           "실행하지 않음: Bedrock 사용 한도 초과", "aborted") for c in cases[i - 1:]]
+                    break
                 asked = Asked("", [], [], [], 0.0)
                 passed, detail, status = False, f"실행 오류: {mask_exception(exc, secrets)}", "ok"
             results.append(CaseResult(str(case.get("question")), str(case.get("type")), passed, detail, status,
@@ -269,7 +274,11 @@ def eval_report(results: list[CaseResult], trace_copy: Path | None = None) -> tu
         if not r.passed:
             lines.append("         답변: " + " ".join(r.answer.split())[:200])
     if skipped:
-        lines.append(f"\n===== 채점 제외 {len(skipped)}문항 (평가셋을 고쳐야 합니다) =====")
+        aborted = [r for r in skipped if r.status == "aborted"]
+        if aborted:
+            lines.append(f"\n===== 실행하지 않음 {len(aborted)}문항 (Bedrock 사용 한도 초과, 한도가 풀린 뒤 다시 실행) =====")
+        if len(aborted) < len(skipped):
+            lines.append(f"\n===== 채점 제외 {len(skipped) - len(aborted)}문항 (평가셋을 고쳐야 합니다) =====")
         lines += [f"  ({r.type}) {r.question} - {r.detail}" for r in skipped]
     safety = [r for r in scored if r.type in SAFETY_TYPES]
     function = [r for r in scored if r.type not in SAFETY_TYPES]
@@ -359,6 +368,10 @@ async def run_judge(items: list[dict], base: Settings, runtime: Any, judge_llm: 
             rows.append(JudgeRow(item["id"], result.score, result.reasoning, mask_secrets(asked.answer, secrets),
                                  result.missing))
         except Exception as exc:  # noqa: BLE001 - 한 문항 실패는 점수 없음으로 표시
+            if is_quota_error(exc):
+                rows += [JudgeRow(it["id"], None, "실행하지 않음: Bedrock 사용 한도 초과")
+                         for it in items[len(rows):]]
+                break
             rows.append(JudgeRow(item["id"], None, f"심사 실패: {mask_exception(exc, secrets)}"))
     return rows
 
