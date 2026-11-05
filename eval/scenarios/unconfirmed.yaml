@@ -1,99 +1,65 @@
-# 유형 전환·규칙 미확정 시나리오 (SCENARIO.md 4장, S11)
-# 학생으로 쓰다가 회사원으로 전환 → 규칙 미확정 상태 → 규정 등록·확정 → 학생 시절 기록 선택 → 규칙 변경 재계산 → 보고서
+# 규칙 미확정·변경 시나리오 (SCENARIO.md 4장, S11)
+# 회사원이 규정을 올리기 전에 먼저 기록 → 규칙 미확정 상태 → 규정 등록·확정 → 규칙 변경 제안·확정·재계산 → 보고서
 # 사내규정 fixture: 연 8시간(1/1~12/31), 확인서 필수, 환경·사회복지 분야만 인정
-name: transition
-user_type: student
-today: "2026-03-10"
+name: unconfirmed
+user_type: employee
+today: "2026-03-20"
 api_mode: fixture
 steps:
-  # 학생 시절 기록
-  - id: T1
-    input: "고등학생이야. 간호학과 가고 싶어"
-    expect:
-      tools: [create_profile]
-  - id: T2
-    input: "오늘 요양원에서 3시간 말벗 봉사했어"
+  # 규칙 미확정 상태
+  - id: S11-1
+    input: "오늘 공원 청소 봉사 2시간 했어"
     expect:
       tools: [log_activity]
-  - id: T3
+      contains: ["규칙 미확정"]
+  - id: S11-2
     input: "복지관 급식 봉사 2시간 했어"          # 날짜가 빠짐 → 날짜만 되묻고 저장하지 않음
     expect:
       not_tools: [log_activity]
       contains_any: ["날짜", "언제"]
-  - id: T3b
+  - id: S11-2b
     input: "3월 5일이야"
     expect:
       tools: [log_activity]
       state:
         activity_count: 2
-
-  # 회사원으로 전환
-  - id: T4
-    input: "이제 회사원이 됐어"
-    today: "2026-03-20"
-    expect:
-      tools: [switch_user_type]
-      state:
-        user_type: employee
-        activity_count: 2               # 기존 기록 유지
-  - id: T5
+  - id: S11-3
     input: "회사 보고서 만들어줘"           # 규칙 미확정 → 생성하지 않고 확정 안내
-    today: "2026-03-20"
     expect:
       not_tools: [generate_report]
       contains_any: ["규칙 확정", "규칙을 먼저"]
-  - id: T6
-    input: "오늘 공원 청소 봉사 2시간 했어"
-    today: "2026-03-20"
-    expect:
-      tools: [log_activity]
-      contains: ["규칙 미확정"]
-  - id: T7
+  - id: S11-4
     input: "회사에서 봉사 몇 시간 채워야 돼?"   # 규정 문서 없음
-    today: "2026-03-20"
     expect:
       contains: ["등록된 사내규정이 없습니다"]
 
   # 규정 등록·확정
-  - id: T8
+  - id: S11-5
     input: "회사 봉사 규정 파일 올릴게"
     attach: eval/fixtures/volunteer_policy.md
-    today: "2026-03-20"
     expect:
       tools: [ingest_policy, propose_rules]
       not_tools: [confirm_rules]
-  - id: T9
+  - id: S11-6
     input: "응, 확정해"
-    today: "2026-03-20"
     expect:
       tools: [confirm_rules]
       state:
         confirmed_rules: 1
         goal_hours: 8
-
-  # 학생 시절 기록 선택
-  - id: T10
-    input: "학생 때 기록 중에 복지관 급식 봉사만 회사 집계에 넣어줘"
-    today: "2026-03-20"
-    expect:
-      tools: [select_records_for_company]
-      state:
-        include_in_company_count: 1
-        pending_proof_hours: 4          # 복지관 급식 2h(사회복지) + 공원 청소 2h(환경), 둘 다 확인서 없음
+        pending_proof_hours: 4          # 공원 청소 2h(환경) + 복지관 급식 2h(사회복지), 둘 다 확인서 없음
         remaining_hours: 8
 
   # 규칙 변경 → 재계산과 차이 표시
-  - id: T11
+  - id: S11-7
     input: "회사 규정이 바뀌었어. 연 목표를 10시간으로 고쳐줘"   # 변경 후보만 보여 주고 확정은 기다림 (G4)
-    today: "2026-03-20"
     expect:
       not_tools: [confirm_rules]
       contains: ["8", "10"]
       state:
         goal_hours: 8                   # 확정 전이므로 기존 규칙 유지
-  - id: T11b
+  - id: S11-7b
     input: "응, 확정해"
-    today: "2026-03-20"
     expect:
       tools: [confirm_rules]
       contains: ["8", "10"]             # 재계산 전후 차이 표시 (PRD 11)
@@ -102,15 +68,8 @@ steps:
         remaining_hours: 10
 
   # 보고서
-  - id: T12
+  - id: S11-8
     input: "회사 보고서 만들어줘"
-    today: "2026-03-20"
-    expect:
-      tools: [generate_report]
-      contains: [".pdf"]
-  - id: T13
-    input: "학생 포트폴리오도 다시 뽑아줘"
-    today: "2026-03-20"
     expect:
       tools: [generate_report]
       contains: [".pdf"]

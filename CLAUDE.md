@@ -34,7 +34,7 @@
 | Agent | 역할 | 도구 |
 |---|---|---|
 | policy_agent | 사내규정 수집, 검색, 규칙 후보 생성과 확정 | `ingest_policy`, `search_policy`, `propose_rules`, `confirm_rules` |
-| record_agent | 프로필, 활동, 집계, 마감, 보고서, 유형 전환 | `create_profile`, `list_profiles`, `switch_user_type`, `select_records_for_company`, `log_activity`, `update_activity`, `delete_activity`, `attach_certificate`, `get_progress`, `get_upcoming_deadlines`, `export_ics`, `generate_report` |
+| record_agent | 프로필, 활동, 집계, 마감, 보고서 | `create_profile`, `list_profiles`, `log_activity`, `update_activity`, `delete_activity`, `attach_certificate`, `get_progress`, `get_upcoming_deadlines`, `export_ics`, `generate_report` |
 | recommend_agent | 공공 API 추천, 관심 목록, 선호 기억 | `search_volunteer`, `save_to_watchlist`, `remove_from_watchlist`, `save_preference`, `get_preferences` |
 | planner_agent | 봉사 계획 (Plan-and-Execute 그래프) | 실행 단계에서 `get_progress`, `get_upcoming_deadlines`, `get_preferences`, `search_volunteer`, 승인 시 `approve_plan` |
 | general_agent | 인사, 기능 안내 | 도구 없음 |
@@ -65,7 +65,7 @@
 6. 규정 답변에는 항상 근거 조항 원문과 파일명을 붙입니다. 근거가 없으면 `규정에서 확인되지 않음. 담당 부서에 확인이 필요합니다.`라고만 답합니다.
 7. 대입 혜택을 약속하지 않습니다.
 8. 입력을 검증합니다. 0.5시간 단위가 아닌 시간, 음수 시간, 미래 날짜, 하루 24시간 초과, 목록에 없는 유형 코드, `.docx`·`.hwp`는 입력 오류로 안내하고 저장된 데이터는 바꾸지 않습니다(허위 기록 거절 문구와 구분).
-9. 기능별 상세 동작(기록, 추천, 계획, 알림, 보고서, 유형 전환)은 `PRD.md` 성공 기준 1~39가 기준입니다. PRD에서 미결이던 10개 항목의 결정은 `SERVICE.md` 5장 "미결 사항 결정"에 있습니다.
+9. 기능별 상세 동작(기록, 추천, 계획, 알림, 보고서)은 `PRD.md` 성공 기준 1~38이 기준입니다. PRD에서 미결이던 8개 항목의 결정은 `SERVICE.md` 5장 "미결 사항 결정"에 있습니다.
 
 ## 비밀 정보와 데이터
 - 키는 `.env`에만 둡니다(변수 이름은 `.env.example`이 기준). `.env`는 읽어서 쓰기만 하고, 그 내용을 출력하거나 커밋하거나 채팅에 옮기지 않습니다.
@@ -91,7 +91,7 @@ uv run volunteer-agent purge              # DATA_DIR 삭제 (확인 문구 필�
 
 ## 완료 기준 (DoD)
 - **평가는 CLI에서 실행합니다.** 아래 기능 조건 두 가지를 모두 만족해야 합니다.
-- 기능: (1) CLI 시나리오 3개(`eval/scenarios/`)의 모든 단계 통과, (2) 인-아웃 12건 중 10건 이상 통과, 그리고 `uv run pytest` 통과
+- 기능: (1) CLI 시나리오 4개(`eval/scenarios/`)의 모든 단계 통과, (2) 인-아웃 12건 중 10건 이상 통과, 그리고 `uv run pytest` 통과
 - 시나리오 단계(`eval/scenarios/*.yaml`)는 평가 기준이므로, 테스트를 통과시키려고 기대값을 느슨하게 고치지 않습니다. 바꿔야 하면 사용자와 먼저 합의합니다.
 - 안전: guardrail 문항 전부 통과, 비밀 정보 노출 0건
 - 관측: 평가를 실행하면 `trace.jsonl`에 문항별 도구 호출과 지연시간이 남음
