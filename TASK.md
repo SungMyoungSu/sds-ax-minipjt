@@ -45,7 +45,7 @@
 
 ## M2. 사내규정
 
-### [ ] 4. 규정 수집과 BM25 검색
+### [x] 4. 규정 수집과 BM25 검색
 - **만들 것:** `.md`·텍스트 PDF를 조항 단위로 분할(pypdf), `.docx`·`.hwp` 거부, BM25 검색, 근거는 원문 그대로의 조항과 출처 파일명, 근거가 없으면 `규정에서 확인되지 않음`
 - **fixture:** `eval/fixtures/volunteer_policy.md`(연 8시간, 1~12월, 확인서 필수, 환경·사회복지만 인정, 헌혈 언급 없음), `volunteer_policy.hwp`, `volunteer_policy_no_period.md`(기준 기간 조항 없음, "규정에 없음" 확인용)
 - **테스트:** AC2, 지원하지 않는 형식 거부

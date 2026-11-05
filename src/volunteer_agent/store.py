@@ -310,6 +310,18 @@ class Store:
         return PolicyDocument(id=row["id"], filename=row["filename"], format=row["format"],
                               clauses=clauses, created_at=_pdt(row["created_at"]))
 
+    def find_policy_document(self, filename: str) -> PolicyDocument | None:
+        row = self.conn.execute(
+            "SELECT id FROM policy_documents WHERE filename = ? ORDER BY id DESC", (filename,)
+        ).fetchone()
+        return None if row is None else self.get_policy_document(row["id"])
+
+    def delete_policy_document(self, document_id: int) -> None:
+        """문서와 조항을 지운다. 그 문서에서 나온 규칙 후보의 document_id는 NULL이 된다."""
+        self._require("policy_documents", document_id)
+        with self.conn:
+            self.conn.execute("DELETE FROM policy_documents WHERE id = ?", (document_id,))
+
     def list_policy_documents(self) -> list[PolicyDocument]:
         ids = [r["id"] for r in self.conn.execute("SELECT id FROM policy_documents ORDER BY id")]
         return [self.get_policy_document(i) for i in ids]
