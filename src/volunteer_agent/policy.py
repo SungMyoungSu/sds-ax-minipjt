@@ -162,12 +162,24 @@ def _strip_josa(word: str) -> str:
     return word
 
 
+# '하다' 동사 어미(전도하는 → 전도, 기록했어 → 기록). 남는 말이 두 글자 이상일 때만 뗀다.
+_ENDINGS = sorted(["하는", "하면", "하고", "해서", "해도", "했어", "했는데", "하기", "하려면", "한다", "해요", "합니다",
+                   "할", "한", "해", "하"], key=len, reverse=True)
+
+
+def _strip_ending(word: str) -> str:
+    for e in _ENDINGS:
+        if word.endswith(e) and len(word) - len(e) >= 2:
+            return word[: -len(e)]
+    return word
+
+
 def normalize_words(text: str) -> list[str]:
-    """소문자화 → 낱말 → 조사 떼기 → 동의어."""
+    """소문자화 → 낱말 → 조사 떼기 → 동사 어미 떼기 → 동의어."""
     words = re.findall(r"[0-9a-z가-힣]+", text.lower())
     out = []
     for w in words:
-        w = _strip_josa(w)
+        w = _strip_ending(_strip_josa(w))
         out.append(_SYNONYMS.get(w, w))
     return out
 

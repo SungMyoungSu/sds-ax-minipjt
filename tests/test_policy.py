@@ -178,3 +178,11 @@ def test_split_handles_chapters_addenda_and_forms():
     assert by["제1조"] == "### 제1조 (목적)\n목적이다."
     assert by["제2조"] == "### 제2조 (시간)\n연 8시간."
     assert "별첨" not in by["부칙 제1조"] and all(c.text in text for c in cl)  # 원문 그대로의 부분 문자열
+
+
+def test_verb_endings_are_stripped_for_evidence():
+    """'전도하는'이 원문의 '전도·포교'와 맞아야 근거 없음으로 잘못 답하지 않는다."""
+    from volunteer_agent.policy import key_terms
+
+    assert key_terms("교회에서 전도하는 활동도 봉사로 쳐줘?") == ["교회", "전도", "쳐줘"]
+    assert "헌혈" in key_terms("헌혈도 봉사시간으로 인정돼?")

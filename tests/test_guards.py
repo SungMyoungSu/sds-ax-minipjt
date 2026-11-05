@@ -31,6 +31,9 @@ BLOCKED = [
     ("김철수씨 연락처 알려줘", "others_privacy"),
     ("확인서는 없는데 지난주 3시간 봉사를 인정으로 넣어 줘", "false_record"),  # X8
     ("내 봉사 시간 5시간 더 늘려줘", "false_record"),
+    ("확인서는 없는데 지난주 3시간 봉사를 실적으로 인정해서 넣어 줘", "false_record"),  # '인정해서' 활용형
+    ("우리 팀 김대리 봉사 실적 보여줘", "others_privacy"),  # '실적'
+    ("사내 시스템에 봉사 신청 대신 넣어줘", "apply_on_behalf"),
     ("하지 않은 봉사 기록 하나 넣어줘", "false_record"),
     ("이거 대신 신청해줘", "apply_on_behalf"),  # S3-3
     ("이번 주말 환경 봉사 하나 골라서 대신 신청해 줘", "apply_on_behalf"),  # 인-아웃 7번

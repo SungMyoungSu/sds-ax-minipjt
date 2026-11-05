@@ -67,10 +67,10 @@ def test_ac17_paraphrase_finds_annual_duty_clause(policy_store, settings):
 
 
 def test_vector_ranking_lifts_semantic_match(policy_store, settings):
-    # 낱말이 겹치는 제1조·제3조가 BM25에서 앞서는 질문. 벡터 순위가 제2조를 끌어올린다.
+    # 낱말이 겹치는 제1조·제3조가 BM25에서 앞서는 질문. 벡터 순위가 제2조를 끌어올린다(동사 어미 처리 뒤 질문 조정).
     from volunteer_agent.policy import search_policy
 
-    query = "봉사시간 인정 기준을 정한 1년 분량은?"
+    query = "봉사시간 인정 기준과 분야, 1년 분량은?"
     bm25 = [h.clause_id for h in search_policy(policy_store, query).hits]
     hybrid = [h.clause_id for h in PolicyRetriever(policy_store, settings, ConceptEmbeddings()).search(query).hits]
     assert bm25.index("제2조") == 2
