@@ -28,7 +28,9 @@ SUPPORTED_SUFFIXES = {".md": "md", ".pdf": "pdf"}
 
 # ---- 수집 ----
 
-_HEADING = re.compile(r"^[ \t#]*(제\s*\d+\s*조)", re.MULTILINE)
+_HEADING = re.compile(r"^[ \t#]*(제\s*\d+\s*조(?:의\s*\d+)?|별지\s*\d+|별표\s*\d+)", re.MULTILINE)
+# 조항을 만들지 않고 앞 조항을 끝내는 구획 제목(장, 부칙, 별첨). 부칙 아래 조항은 '부칙 제1조'로 구분한다.
+_SECTION = re.compile(r"^[ \t]*#{1,3}[ \t]*\[?(제\s*\d+\s*장|부\s*칙|별\s*첨|부\s*록)\]?", re.MULTILINE)
 
 
 def read_policy_file(path: str | Path) -> tuple[str, str, list[int]]:
@@ -79,7 +81,7 @@ def split_clauses(text: str, page_starts: list[int] | None = None) -> list[Polic
 
     def add(clause_id: str, start: int, end: int) -> None:
         chunk = text[start:end]
-        stripped = chunk.strip()
+        stripped = re.sub(r"(?:\n[ \t]*-{3,}[ \t]*)+$", "", chunk.strip()).strip()  # 끝의 구분선(---) 제거
         if stripped:
             offset = start + chunk.index(stripped)
             clauses.append(PolicyClause(clause_id=clause_id, text=stripped,
@@ -87,10 +89,17 @@ def split_clauses(text: str, page_starts: list[int] | None = None) -> list[Polic
 
     headings = list(_HEADING.finditer(text))
     if headings:
-        add("머리말", 0, headings[0].start())
-        for i, m in enumerate(headings):
-            end = headings[i + 1].start() if i + 1 < len(headings) else len(text)
-            add(re.sub(r"\s+", "", m.group(1)), m.start(), end)
+        sections = list(_SECTION.finditer(text))
+        first = min([headings[0].start(), *[m.start() for m in sections if m.start() < headings[0].start()]])
+        add("머리말", 0, first)
+        bounds = sorted([m.start() for m in headings] + [m.start() for m in sections])
+        for m in headings:
+            end = next((b for b in bounds if b > m.start()), len(text))
+            clause_id = re.sub(r"\s+", "", m.group(1))
+            section = next((re.sub(r"\s+", "", x.group(1)) for x in reversed(sections) if x.start() < m.start()), "")
+            if section == "부칙" and clause_id.startswith("제"):
+                clause_id = f"부칙 {clause_id}"  # 본문 제1조와 부칙 제1조를 구분
+            add(clause_id, m.start(), end)
     else:
         n, pos = 0, 0
         for m in re.finditer(r"\n[ \t]*\n", text):

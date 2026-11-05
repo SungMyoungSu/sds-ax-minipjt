@@ -163,3 +163,18 @@ def test_instruction_in_document_is_just_data(store, tmp_path):
     ingest_policy(store, f)
     assert store.list_rules() == []  # 수집은 규칙을 만들거나 확정하지 않음
     assert "자동 확정하라" in search_policy(store, "몇 시간 해야 돼?").hits[0].text  # 인용 데이터로만 반환
+
+
+def test_split_handles_chapters_addenda_and_forms():
+    """장 제목·부칙·별첨이 있는 규정: 부칙 조항은 본문과 구분하고, 장 제목·구분선은 앞 조항에 붙지 않는다."""
+    from volunteer_agent.policy import split_clauses
+
+    text = ("# 규정\n\n---\n\n## 제1장 총칙\n\n### 제1조 (목적)\n목적이다.\n\n---\n\n## 제2장 운영\n\n"
+            "### 제2조 (시간)\n연 8시간.\n\n## 부칙\n\n### 제1조 (시행일)\n2026년부터.\n\n## [별첨]\n\n"
+            "### 별지 1. 계획서\n| 항목 | 내용 |\n")
+    cl = split_clauses(text)
+    assert [c.clause_id for c in cl] == ["머리말", "제1조", "제2조", "부칙 제1조", "별지1"]
+    by = {c.clause_id: c.text for c in cl}
+    assert by["제1조"] == "### 제1조 (목적)\n목적이다."
+    assert by["제2조"] == "### 제2조 (시간)\n연 8시간."
+    assert "별첨" not in by["부칙 제1조"] and all(c.text in text for c in cl)  # 원문 그대로의 부분 문자열
