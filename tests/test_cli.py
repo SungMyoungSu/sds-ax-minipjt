@@ -66,7 +66,7 @@ def test_ac12_chat_second_answer_continues_first_conversation(settings):
     assert code == 0
     # 두 번째 턴에서 Supervisor가 받은 메시지에 첫 번째 사용자 메시지가 들어 있다(같은 thread)
     last_seen = fake.models["supervisor"].seen[-1]
-    humans = [m.content for m in last_seen if isinstance(m, HumanMessage)]
+    humans = [m.content for m in last_seen if isinstance(m, HumanMessage) and not m.content.startswith("[진행 점검")]
     assert humans == ["회사 봉사 규정 파일 올릴게", "응, 확정해"]
     assert "확정 발화: 응, 확정해" in out  # confirm_rules가 실제 사용자 발화로 불림
     assert "  [trace] Agent: policy_agent | 도구: confirm_rules" in out  # 답변마다 한 줄
@@ -77,7 +77,7 @@ def test_each_cli_run_is_a_new_thread(settings):
     fake = FakeRuntime()
     run_cli(settings, ["--user-type", "employee", "--once", "회사 봉사 규정 파일 올릴게"], fake=fake)
     run_cli(settings, ["--once", "어떤 일을 도와줄 수 있어?"], fake=fake)
-    humans = [m.content for m in fake.models["supervisor"].seen[-1] if isinstance(m, HumanMessage)]
+    humans = [m.content for m in fake.models["supervisor"].seen[-1] if isinstance(m, HumanMessage) and not m.content.startswith("[진행 점검")]
     assert humans == ["어떤 일을 도와줄 수 있어?"]  # 앞 실행의 대화는 이어지지 않음
 
 
@@ -114,7 +114,7 @@ def test_attach_adds_file_path_to_message(settings, tmp_path):
     f.write_text("제1조", encoding="utf-8")
     assert with_attachment("규정 올릴게", f) == f"규정 올릴게\n(첨부 파일: {f.resolve()})"
     code, out, fake = run_cli(settings, ["--user-type", "employee", "--attach", str(f), "--once", "규정 파일 올릴게"])
-    humans = [m.content for m in fake.models["supervisor"].seen[0] if isinstance(m, HumanMessage)]
+    humans = [m.content for m in fake.models["supervisor"].seen[0] if isinstance(m, HumanMessage) and not m.content.startswith("[진행 점검")]
     assert humans == [f"규정 파일 올릴게\n(첨부 파일: {f.resolve()})"]
     code, out, _ = run_cli(settings, ["--attach", str(tmp_path / "없음.md"), "--once", "x"])
     assert code == 2 and "찾을 수 없습니다" in out
@@ -125,7 +125,7 @@ def test_chat_attach_command(settings, tmp_path):
     f.write_bytes(b"%PDF")
     stdin = f"/첨부 {f} 확인서 붙여줘\n/첨부 {tmp_path / 'x.pdf'} 이것도\n종료\n"
     code, out, fake = run_cli(settings, ["chat", "--user-type", "employee"], stdin)
-    humans = [m.content for m in fake.models["supervisor"].seen[-1] if isinstance(m, HumanMessage)]
+    humans = [m.content for m in fake.models["supervisor"].seen[-1] if isinstance(m, HumanMessage) and not m.content.startswith("[진행 점검")]
     assert humans == [f"확인서 붙여줘\n(첨부 파일: {f.resolve()})"]
     assert "파일을 찾을 수 없습니다" in out
 

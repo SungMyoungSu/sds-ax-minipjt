@@ -50,7 +50,7 @@ def last_human(messages):
 
 def supervisor_handler(messages):
     last = messages[-1]
-    if isinstance(last, HumanMessage):
+    if isinstance(last, HumanMessage) and not last.content.startswith("[진행 점검"):
         text = last.content
         target = "policy_agent" if ("규정" in text or "확정" in text) else "general_agent"
         return call(f"transfer_to_{target}", i=len(messages))
@@ -173,11 +173,11 @@ def test_ac13_confirm_in_same_thread_and_not_in_new_thread(fake_app):
     assert ("confirm_rules", {"confirmation_text": "응, 확정해"}) in stubs.calls
     assert "확정 발화: 응, 확정해" in t2.answer
     # 같은 대화: policy_agent가 앞 턴의 사용자 메시지를 봤다
-    seen_texts = [m.content for m in models["policy_agent"].seen[-1] if isinstance(m, HumanMessage)]
+    seen_texts = [m.content for m in models["policy_agent"].seen[-1] if isinstance(m, HumanMessage) and not m.content.startswith("[진행 점검")]
     assert seen_texts == ["회사 봉사 규정 파일 올릴게", "응, 확정해"]
 
     run(app, "응, 확정해", "thread-B")  # 새 대화
-    seen_texts = [m.content for m in models["policy_agent"].seen[-1] if isinstance(m, HumanMessage)]
+    seen_texts = [m.content for m in models["policy_agent"].seen[-1] if isinstance(m, HumanMessage) and not m.content.startswith("[진행 점검")]
     assert seen_texts == ["응, 확정해"]
 
 
@@ -287,3 +287,49 @@ def test_agent_view_hides_handoff_messages():
     assert not any(isinstance(m, ToolMessage) and m.name.startswith("transfer_") for m in view)
     assert view[-1].content == "이대로 확정할까요?" and view[-1].tool_calls == []
     assert len(view) == 4
+
+
+def test_agent_view_drops_supervisor_empty_closings():
+    """Supervisor의 빈 마무리('.')가 쌓이면 하위 Agent가 도구 없이 '.'만 답한다(S3-1 회귀)."""
+    from volunteer_agent.agents import agent_view
+
+    history = [HumanMessage(content="기록해줘"), AIMessage(content="기록했습니다", name="record_agent"),
+               AIMessage(content=".", name="supervisor"), AIMessage(content="", name="supervisor"),
+               AIMessage(content="두 결과를 정리하면 …", name="supervisor"), HumanMessage(content="추천해줘")]
+    assert [m.content for m in agent_view(history)] == ["기록해줘", "기록했습니다", "두 결과를 정리하면 …", "추천해줘"]
+
+
+def test_supervisor_prompt_adds_progress_note_only_after_agent_returns():
+    from volunteer_agent.agents import supervisor_prompt
+
+    req = HumanMessage(content="남은 봉사 시간에 맞는 걸로 추천해줘")
+    first = supervisor_prompt({"messages": [req]})
+    assert isinstance(first[0], SystemMessage) and first[-1] is req  # 처음에는 메모 없음
+    history = [req,
+               AIMessage(content="", tool_calls=[{"name": "transfer_to_record_agent", "args": {}, "id": "h1"}],
+                         name="supervisor"),
+               ToolMessage(content="ok", tool_call_id="h1", name="transfer_to_record_agent"),
+               AIMessage(content="남은 시간 10시간", name="record_agent",
+                         tool_calls=[{"name": "transfer_back_to_supervisor", "args": {}, "id": "b1"}]),
+               ToolMessage(content="back", tool_call_id="b1", name="transfer_back_to_supervisor")]
+    view = supervisor_prompt({"messages": history})
+    note = view[-1]
+    assert isinstance(note, HumanMessage) and "진행 점검" in note.content
+    assert '"남은 봉사 시간에 맞는 걸로 추천해줘"' in note.content and "맡긴 Agent: record_agent" in note.content
+    assert len(view) == len(history) + 2  # 상태에는 저장하지 않고 입력에만 붙임
+
+
+def test_single_agent_answer_wins_over_supervisor_text(settings):
+    """Agent 하나만 거쳤는데 Supervisor가 판단 과정을 써도 답은 그 Agent의 답이다(S1-2 회귀)."""
+    def chatty_supervisor(messages):
+        last = messages[-1]
+        if isinstance(last, HumanMessage) and not last.content.startswith("[진행 점검"):
+            return call("transfer_to_general_agent", i=len(messages))
+        return AIMessage(content="이번 요청을 다시 분석하면 모든 요청이 처리되었습니다.")
+
+    models = {r: ScriptedChat(handler=general_handler, seen=[]) for r in AGENT_TOOLS}
+    models["supervisor"] = ScriptedChat(handler=chatty_supervisor, seen=[])
+    app = compile_app(lambda r: models[r], StubTools().mcp(), AppClock.create(settings, date(2026, 11, 4)),
+                      store=InMemoryStore())
+    t = asyncio.run(ask(app, "안녕", "t-chatty"))
+    assert t.agents == ["general_agent"] and t.answer == "봉사 규정 등록, 기록, 추천을 도와드립니다."

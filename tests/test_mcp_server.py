@@ -200,3 +200,9 @@ def test_student_create_profile_twice_updates_existing(env):
     out = call("create_profile", user_type="student", goal_hours=10, period_start="2026-03-02", period_end="2026-07-18")
     assert "고쳤습니다" in out and "목표 10" in out and "2026-03-02~2026-07-18" in out and "간호학" in out
     assert out.startswith("프로필 #1")
+
+
+def test_log_activity_treats_none_text_as_missing(env):
+    call("create_profile", user_type="employee")
+    out = call("log_activity", date="2026-11-03", organization="None", hours=2, type_code="0800")
+    assert "기관" in out and "활동 #" not in out

@@ -63,7 +63,8 @@ v1은 본인과 지인이 Windows PC에서 쓰는 개인 도구입니다. PC 한
 ```
  사용자 ── CLI (주 화면, 평가 대상) ─────┐
          │  chat / --once / scenario    │
-         └ Streamlit (보조, localhost) ──┤   같은 build_app()
+         │  / check / notify            │
+         └ Streamlit (보조, localhost) ──┤   같은 build_app() (app.open_app)
                                         ▼
                          [입력 가드레일] 1차 정규식 → 2차 LLM 판별(확신도 > 0.7)
                            │ 차단 → 고정 거절 문구 + guard_audit.log
@@ -99,7 +100,7 @@ v1은 본인과 지인이 Windows PC에서 쓰는 개인 도구입니다. PC 한
 | 대화 상태 | LangGraph checkpointer로 `thread_id` 단위 멀티턴 기억을 둡니다. CLI 한 번 실행과 Streamlit 세션 하나가 각각 thread 하나입니다. |
 | 사용자 설정 | PC당 1명. 처음 실행할 때 `user_type`(회사원·학생)을 저장합니다. |
 | 데이터 관리 | `volunteer-agent export`(zip 내보내기, `DATA_DIR/exports/`), `volunteer-agent purge`(확인 문구 `내 데이터 모두 삭제`를 정확히 입력해야 삭제) |
-| CLI | `chat`(대화형, `/첨부 파일 메시지`로 파일 첨부), `--once`(한 번, `--attach 파일`), `scenario`(시나리오 평가), `notify`(마감 점검 1회, 작업 스케줄러용). 공통 옵션 `--user-type`, `--today`, `--show-trace`, `--api-mode fixture\|live`. 시작할 때 7일 이내 마감을 안내하고, 실행마다 `trace.jsonl`을 남깁니다 |
+| CLI | `chat`(대화형, `/첨부 파일 메시지`로 파일 첨부), `--once`(한 번, `--attach 파일`), `scenario`(시나리오 평가), `check`(통합 점검), `notify`(마감 점검 1회, 작업 스케줄러용), `export`, `purge`. 공통 옵션 `--user-type`, `--today`, `--show-trace`, `--api-mode fixture\|live`. 시작할 때 7일 이내 마감을 안내하고, 실행마다 `trace.jsonl`을 남깁니다 |
 | 도구 서버 | fastmcp stdio MCP 서버. 결정적 코드이며, docstring에 언제 쓰고 언제 쓰지 않는지를 함께 적습니다. |
 | 저장소 | SQLite, `DATA_DIR`(확인서 사본, PDF, `.ics`) |
 | 스케줄러 | Windows 작업 스케줄러가 하루 한 번 돌립니다. 놓친 실행은 다음에 켤 때 돌립니다. |
@@ -239,6 +240,19 @@ PM 인터뷰에서 나중에 정하기로 했던 항목들을 2026-11-04에 아�
 | 7 | 계획의 주차별 목표 배분 | 남은 주에 고르게 나누고(0.5시간 단위로 올림), 선호 요일을 반영 |
 | 8 | 샘플 데이터의 날짜와 '모집 마감 전' 조건 | 샘플 날짜를 `--today` 기준 상대 날짜로 바꿔 씁니다 |
 
+### 구조도와 코드 대응 (`build_app()` = `app.open_app` → `app.compile_app`)
+| 구조도 요소 | 코드 |
+|---|---|
+| CLI / Streamlit | `cli.py`(`chat`, `--once`, `scenario`, `check`, `notify`, `export`, `purge`), `app.py` + `web.py`(`ChatBackend`) |
+| 입력 가드레일 | `guards.py`(`rule_check` → `InputGuard`의 LLM 판별 `InjectionCheck`, `guard_audit.log`). `app.ask(..., guard=)`가 Supervisor보다 먼저 부름 |
+| Supervisor + checkpointer | `app.compile_app`: `create_supervisor(..., output_mode="full_history")` + `InMemorySaver`(thread_id 단위) |
+| 하위 Agent 5개 | `agents.py`(`AGENT_TOOLS`, `AGENT_PROMPTS`, `build_agents`, 하위 Agent에는 이동 메시지를 뺀 대화 `agent_view`), `planner.py`(`build_planner`) |
+| 장기 기억 | `memory.py`(LangGraph `SqliteStore`, `save_preference`·`get_preferences` Python 도구) |
+| 로컬 MCP 서버 | `mcp_server.py`(fastmcp stdio, 도구 18개, 마스킹 `safe`, 네트워크 허용 목록 `netguard.py`) |
+| SQLite·DATA_DIR | `store.py`, `records.py`, `progress.py`, `rules.py`, `policy.py`, `rag.py`(Chroma + Titan), `recommend.py`(data.go.kr), `deadlines.py`(.ics), `reports.py`(PDF), `notify.py`(SMTP/.eml) |
+| trace.jsonl | `tracing.py`(`FileTracer`, MCP 서버가 쓰는 `embedding_fallback`) |
+| 평가 | `scenario.py`, `evaluation.py`, `eval/run_eval.py`, `eval/llm_judge.py` |
+
 ### reference 기술 적용 대응표
 | reference 기술 | 파일 | 이 서비스에서 쓰는 곳 | 검증 |
 |---|---|---|---|
@@ -255,3 +269,24 @@ PM 인터뷰에서 나중에 정하기로 했던 항목들을 2026-11-04에 아�
 | 누적 평가셋 자동 판정 | `run_eval.py`, `eval_set.json` | `eval/run_eval.py`, 인-아웃 12건 | AC11 |
 | LLM 심사 | `llm_judge.py` | `eval/llm_judge.py`, 6문항 | AC20 (a) |
 | 통합 점검 | `integration_check.py` | `volunteer-agent check` | AC20 (b) |
+
+## 6. 운영 안내
+
+### Windows 작업 스케줄러 등록 (마감 알림, 하루 1회)
+`volunteer-agent notify`가 마감 점검을 한 번 실행합니다. 같은 마감의 같은 D-n 알림은 한 번만 보내고, SMTP가 없으면 `DATA_DIR/outbox/`에 `.eml`로 저장합니다. PC가 꺼져 놓친 실행은 다음에 켤 때 돌도록 설정합니다.
+
+```powershell
+# 프로젝트 폴더 경로를 넣어 한 번 등록 (매일 09:00)
+schtasks /Create /TN "VolunteerAgent Notify" /SC DAILY /ST 09:00 /F `
+  /TR "cmd /c cd /d C:\경로\mini-pjt && uv run volunteer-agent notify >> data\notify.log 2>&1"
+# 놓친 실행 보충: 작업 스케줄러 > 작업 속성 > 설정 > "예약된 시작 시간을 놓친 경우 가능한 빨리 작업 시작" 체크
+schtasks /Run /TN "VolunteerAgent Notify"         # 바로 한 번 실행해 확인
+schtasks /Delete /TN "VolunteerAgent Notify" /F   # 해제
+```
+
+### 수동 체크리스트 (자동 테스트로 확인하지 않는 것)
+| 항목 | 방법 | 기대 |
+|---|---|---|
+| 캘린더 가져오기 | `chat`에서 "캘린더에 넣어줘" → 생성된 `DATA_DIR/calendar/*.ics`를 Google Calendar(설정 > 가져오기·내보내기)나 Outlook(파일 열기)으로 가져오기 | 마감 일정이 그날 09:00 30분 일정으로 보이고 D-30, D-7, D-1 알림이 붙음 |
+| Streamlit PDF 다운로드 | `uv run streamlit run app.py` → 브라우저(http://localhost:8501)에서 "올해 봉사 보고서 PDF로 만들어줘" | 답 아래 "PDF 다운로드" 버튼이 나오고, 받은 PDF의 한글이 깨지지 않음 |
+| 작업 스케줄러 | 위 명령으로 등록한 뒤 `schtasks /Run` | `data\notify.log`에 "마감 알림 점검 결과"가 남음 |

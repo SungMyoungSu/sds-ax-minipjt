@@ -25,7 +25,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.prebuilt import InjectedState
 from langgraph_supervisor import create_supervisor
 
-from volunteer_agent.agents import AGENT_TOOLS, SUPERVISOR_PROMPT, build_agents
+from volunteer_agent.agents import AGENT_TOOLS, build_agents, supervisor_prompt
 from volunteer_agent.memory import memory_tools, open_store
 from volunteer_agent.config import Settings
 from volunteer_agent.llm import get_text, make_llm
@@ -92,7 +92,7 @@ def compile_app(llm_for: Callable[[str], Any], tools: list[BaseTool], clock: App
         names = {t.name for t in all_tools}
         all_tools += [t for t in memory_tools(store) if t.name not in names]
     agents = build_agents(llm_for, all_tools, clock.today)
-    supervisor = create_supervisor(agents, model=llm_for("supervisor"), prompt=SUPERVISOR_PROMPT,
+    supervisor = create_supervisor(agents, model=llm_for("supervisor"), prompt=supervisor_prompt,
                                    add_handoff_back_messages=True, output_mode="full_history")
     return supervisor.compile(checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
                               store=store)
@@ -202,7 +202,9 @@ async def ask(app: Any, text: str, thread_id: str, callbacks: list | None = None
             agent = tc["name"].removeprefix("transfer_to_")
             if tc["name"].startswith("transfer_to_") and agent in AGENT_TOOLS and agent not in agents:
                 agents.append(agent)
-    turn = Turn(answer=final_answer(new), messages=new, agents=agents, tools=recorder.names)
+    # 하위 Agent 하나만 거쳤으면 그 Agent의 답을 그대로 쓴다(Supervisor가 판단 과정 등을 덧붙여도 무시)
+    answer = final_answer([m for m in new if getattr(m, "name", None) != "supervisor"]) if len(agents) == 1 else ""
+    turn = Turn(answer=answer or final_answer(new), messages=new, agents=agents, tools=recorder.names)
     if tracer is not None:
         _trace_turn_end(tracer, thread_id, turn, started)
     return turn

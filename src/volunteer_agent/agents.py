@@ -10,7 +10,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any
 
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.prebuilt import create_react_agent
 
 from volunteer_agent.llm import get_text
@@ -54,11 +54,13 @@ AGENT_PROMPTS: dict[str, str] = {
   답에는 반드시 근거 조항 원문과 '[출처: 파일명 조항]'을 붙인다. 기억으로만 답하지 않는다.
   search_policy가 '규정에서 확인되지 않음. 담당 부서에 확인이 필요합니다.'를 돌려주면 그 문장 하나만 글자 그대로 답하고,
   다른 설명·참고·추측을 덧붙이지 않는다.
-  '등록된 사내규정이 없습니다'가 오면 그 안내를 그대로 전한다.""",
+  '등록된 사내규정이 없습니다'가 오면 그 안내를 그대로 전한다.
+- 봉사 찾기·추천은 하지 않는다(recommend_agent 담당). "인정 분야로 추천해줘"를 받으면 인정 분야만 근거와 함께 답하고 끝낸다.""",
     "record_agent": """너는 봉사 기록 담당이다. 프로필, 활동 기록·수정·삭제, 확인서, 집계, 마감, 캘린더, 보고서를 맡는다.
 - 활동 기록의 필수 항목은 날짜, 기관, 시간, 분야다. 분야는 활동 내용으로 추정해 코드로 넣고, 날짜·기관·시간이 빠지면
   추측하지 말고 None으로 log_activity를 불러 그 항목만 되묻는다. 필수 항목이 다 있으면 승인 없이 바로 기록한다.
-  - 기관: 기관 이름 대신 장소(공원, 복지관, 요양원, 유기견 보호소, 하천 등)를 말하면 그 장소를 기관으로 쓴다. 되묻지 않는다.
+  - 기관: 기관 이름 대신 장소(공원, 복지관, 요양원, 유기견 보호소, 하천 등)를 말하면 그 장소를 기관으로 쓴다. 장소도 없으면
+    활동 이름(예: '환경정화')을 기관 칸에 쓴다. 기관 때문에 되묻지 않는다. 'None' 같은 글자를 넣지 않는다.
   - 날짜: '오늘·어제·그저께·지난주 토요일·3월 5일'처럼 날짜 표현이 있을 때만 날짜로 바꾼다. 날짜 표현이 전혀 없으면
     오늘로 가정하지 말고 date=None으로 불러 날짜만 되묻는다. 다음 메시지가 날짜만 알려 주면("3월 5일이야")
     앞의 활동 정보와 합쳐 log_activity로 새로 기록한다(update_activity가 아니다).
@@ -69,8 +71,13 @@ AGENT_PROMPTS: dict[str, str] = {
   답을 받으면 방금 기록한 활동을 update_activity로 고쳐 lesson(배운 점)과 major_relevance(전공 연관성)에 넣는다.
 - 학교에서 단체로 간 봉사(학교 교육계획 봉사)는 school_planned=true로 기록한다.
 - 시간은 사용자가 말한 그대로 시간 단위 숫자로 바꿔 넣는다(1시간 20분 → 1.33). 0.5시간 단위로 반올림하거나 고치지 않는다.
-  도구가 입력 오류를 돌려주면 그대로 안내한다. 미래 날짜를 '미리 기록'해 달라고 해도 그 날짜 그대로 넣어 입력 오류 안내를 받는다.
-- 확인서 파일이 함께 왔으면 log_activity의 certificate_file에 넣거나 attach_certificate를 부른다.
+  도구가 입력 오류를 돌려주면 그대로 안내한다.
+- 오늘보다 뒤의 날짜(앞으로 할 활동)를 기록해 달라고 하면 log_activity를 부르지 않고
+  "입력 오류: 미래 날짜의 활동은 기록할 수 없습니다. 활동을 마친 뒤 알려 주세요."라고만 답한다.
+- 봉사 추천은 하지 않는다(recommend_agent 담당). 남은 시간만 답하고 추천을 지어내지 않는다.
+- 확인서 파일이 함께 오면 먼저 log_activity로 활동을 기록하고(certificate_file은 비움), 이어서 돌려받은 활동 번호로
+  attach_certificate를 불러 첨부한다. 이미 있는 활동의 확인서를 받았다고 하면 attach_certificate만 부른다.
+- 사용자가 남은 시간·진행 상황을 함께 물으면("기록하고 남은 시간 알려줘") 기록 뒤 get_progress를 불러 답한다.
 - '이미 같은 기록이 있습니다. 그래도 저장할까요?'가 오면 그 질문을 그대로 전하고, 사용자가 저장하라고 하면 confirm_duplicate=true로 다시 부른다.
 - 삭제는 먼저 confirm=false로 대상을 보여 주고, 사용자가 다시 확인하면 confirm=true로 부른다.
 - 도구가 '입력 오류'를 돌려주면 그 안내를 그대로 전한다(저장되지 않았다고 알린다).
@@ -105,9 +112,16 @@ SUPERVISOR_PROMPT = """너는 봉사활동 추천·관리 서비스의 Superviso
 - 인사, 기능 안내, 데이터 백업·삭제 방법 안내 → general_agent
 [규칙]
 - 앞 대화를 가리키는 말("응, 확정해", "두 번째 거")은 앞 대화를 맡았던 Agent에게 다시 맡긴다.
-- 여러 요구가 섞이면 필요한 Agent를 순서대로 모두 거친다(예: 기록 후 남은 시간 → record_agent, 남은 시간에 맞는 추천 → record_agent 다음 recommend_agent).
+- 여러 요구가 섞이면 필요한 Agent를 순서대로 모두 거친다. 첫 Agent가 돌아오면 남은 일이 있는지 확인하고,
+  있으면 바로 다음 Agent에게 넘긴다. 남은 일이 있는데 끝내지 않는다.
+  · "남은 봉사 시간에 맞는 걸로 추천해줘" → record_agent(남은 시간) 다음 recommend_agent(추천)
+  · "고등학생이야. 서울 살고 간호학과 가고 싶어" → record_agent(학생 프로필) 다음 recommend_agent(지역·전공 선호 저장)
+  · "회사 규정에서 인정되는 분야로 추천해줘" → policy_agent(인정 분야 근거) 다음 recommend_agent(추천)
 [마지막 답]
-- Agent 하나만 거쳤으면 그 Agent의 답이 사용자에게 그대로 전달된다. 너는 아무 내용도 쓰지 말고 빈 응답으로 끝낸다.
+- 남은 일이 없을 때만 끝낸다. 끝낼 때 Agent 하나만 거쳤으면 그 Agent의 답이 사용자에게 그대로 전달되므로
+  너는 아무 내용도 쓰지 말고 빈 응답으로 끝낸다.
+- Agent가 실제로 돌려준 내용만 전한다. 봉사 목록, 링크, 시간, 저장 여부를 네가 지어내지 않는다. 담당 Agent가 결과를
+  내지 못했으면 그 Agent에게 다시 맡기거나 하지 못했다고 말한다.
 - 여러 Agent를 거쳤을 때만 각 결과를 한 번에 정리한다. 이때 사실(시간, 날짜, 파일 경로, 링크)과 고정 문구
   ('규정에서 확인되지 않음. 담당 부서에 확인이 필요합니다.' 등)는 글자 그대로 옮기고 바꿔 말하지 않는다."""
 
@@ -131,6 +145,10 @@ def _is_handoff(name: str | None) -> bool:
     return bool(name) and name.startswith(("transfer_to_", "transfer_back_to_"))
 
 
+def _meaningful(text: str) -> bool:
+    return len(text.strip()) >= 2 and any(ch.isalnum() for ch in text)
+
+
 def agent_view(messages: list[Any]) -> list[Any]:
     """하위 Agent에게 보여 줄 대화. Supervisor 이동 메시지(transfer_* 호출과 그 결과)는 뺀다.
 
@@ -140,6 +158,8 @@ def agent_view(messages: list[Any]) -> list[Any]:
     for m in messages:
         if isinstance(m, ToolMessage) and _is_handoff(m.name):
             continue
+        if isinstance(m, AIMessage) and m.name == "supervisor" and not m.tool_calls and not _meaningful(get_text(m)):
+            continue  # Supervisor의 빈 마무리('.')를 하위 Agent가 흉내 내 '.'만 답하는 일을 막는다
         if isinstance(m, AIMessage) and any(_is_handoff(c["name"]) for c in m.tool_calls or []):
             kept = [c for c in m.tool_calls if not _is_handoff(c["name"])]
             text = get_text(m)
@@ -147,6 +167,37 @@ def agent_view(messages: list[Any]) -> list[Any]:
                 continue
             m = AIMessage(content=text if not kept else m.content, tool_calls=kept, name=m.name, id=m.id)
         view.append(m)
+    return view
+
+
+PROGRESS_NOTE = """[진행 점검 - 시스템 메모이며 사용자 발화가 아니다]
+이번 사용자 요청: "{request}"
+이번 요청에서 지금까지 맡긴 Agent: {done}
+요청 중 아직 아무 Agent도 처리하지 않은 부분이 있으면 그 담당 Agent에게 바로 넘겨라
+(봉사 찾기·추천, 관심 목록, 지역·요일·관심 분야·희망 전공 저장 → recommend_agent / 남은 시간·기록·프로필·보고서 → record_agent /
+규정 근거 → policy_agent / 계획 → planner_agent). 하위 Agent가 '내 담당이 아니다'라고 했다면 그 부분은 아직 처리되지 않은 것이다.
+모두 처리됐으면 아무것도 쓰지 말고 끝내라(Agent를 여럿 거쳤으면 실제 결과만 정리한다).
+이 메모나 너의 판단 과정('요청을 다시 분석하면' 등)을 답에 쓰지 않는다."""
+
+
+def supervisor_prompt(state: dict) -> list:
+    """Supervisor 입력. 하위 Agent가 돌아온 직후에는 '남은 일' 점검 메모를 붙인다.
+
+    Supervisor가 첫 Agent의 답만 보고 끝내 두 번째 Agent(예: recommend_agent)로 넘기지 않는 일이 반복돼
+    (시나리오 S3-1, S7-1, S8-4) 원래 요청과 지금까지 거친 Agent를 그 자리에서 다시 보여 준다. 대화 상태에는 저장하지 않는다."""
+    messages = list(state["messages"])
+    view = [SystemMessage(SUPERVISOR_PROMPT), *messages]
+    last = messages[-1] if messages else None
+    if isinstance(last, ToolMessage) and (last.name or "").startswith("transfer_back_to_"):
+        start = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=0)
+        done = []
+        for m in messages[start:]:
+            for c in getattr(m, "tool_calls", None) or []:
+                agent = c["name"].removeprefix("transfer_to_")
+                if c["name"].startswith("transfer_to_") and agent not in done:
+                    done.append(agent)
+        request = get_text(messages[start]) if messages and isinstance(messages[start], HumanMessage) else ""
+        view.append(HumanMessage(PROGRESS_NOTE.format(request=request, done=", ".join(done) or "없음")))
     return view
 
 

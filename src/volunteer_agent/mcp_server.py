@@ -80,6 +80,7 @@ class Context:
     def store(self) -> Iterator[Store]:
         s = Store.open(self.settings, now=lambda: self.now)
         try:
+            ensure_company_profile(s, self.settings, self.today)
             yield s
         finally:
             s.close()
@@ -88,6 +89,21 @@ class Context:
         if self.api_mode == "fixture":
             return VolunteerClient(self.settings, FixtureFetcher(self.fixtures, self.today))
         return VolunteerClient(self.settings)
+
+
+def ensure_company_profile(store: Store, settings: Settings, today: date) -> None:
+    """회사원인데 회사 프로필이 없으면 규칙 미확정 회사 프로필을 만든다. 규정을 올리기 전 기록도 '규칙 미확정'으로
+    저장·표시되고(AC22), 보고서 요청에 '규칙을 먼저 확정' 안내가 나오게 한다. 규칙 후보는 이 프로필에 붙는다."""
+    setting = store.get_user_setting()
+    if setting is not None and setting.user_type == "employee" and company_profile(store) is None:
+        RecordService(store, settings, today).create_profile("employee")
+
+
+def _blank(value: str | None) -> str | None:
+    """LLM이 빈 값을 'None', 'null' 같은 글자로 넣는 경우를 빈 값으로 본다."""
+    if value is None or str(value).strip().lower() in ("", "none", "null", "-", "없음"):
+        return None
+    return value
 
 
 def _parse_date(value: str | None, label: str = "날짜") -> date | None:
@@ -348,6 +364,8 @@ def log_activity(date: str | None = None, organization: str | None = None, hours
     분야 코드(1365 대분류): 0100 생활편의, 0200 주거환경, 0300 상담ㆍ멘토링, 0400 교육, 0500 보건ㆍ의료, 0600 농어촌 봉사,
     0700 문화ㆍ체육ㆍ예술ㆍ관광, 0800 환경ㆍ생태계보호, 0900 사무행정, 1000 지역안전ㆍ보호, 1100 인권ㆍ공익,
     1200 재난ㆍ재해, 1300 국제협력ㆍ해외봉사, 1500 기타, 1700 자원봉사 기본교육.
+    분류 예: 환경정화·플로깅·공원 청소 → 0800, 급식·배식·복지관 생활 지원 → 0100, 요양원·병원 돌봄 → 0500,
+    유기견·유기묘 보호소 등 동물 보호 → 1500(1365에 동물보호 대분류가 없음).
 
     Args:
         date: 활동 날짜 YYYY-MM-DD(상대 표현은 기준 날짜로 바꿔 넣는다)
@@ -365,7 +383,7 @@ def log_activity(date: str | None = None, organization: str | None = None, hours
     ctx = context()
     with ctx.store() as store:
         svc = RecordService(store, ctx.settings, ctx.today)
-        inp = ActivityInput(start_date=_parse_date(date), organization=organization, hours=hours,
+        inp = ActivityInput(start_date=_parse_date(date), organization=_blank(organization), hours=hours,
                             type_code=type_code, end_date=_parse_date(end_date, "끝난 날짜"), content=content,
                             major_relevance=major_relevance, lesson=lesson, school_planned=school_planned,
                             certificate_file=certificate_file)

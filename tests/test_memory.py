@@ -58,7 +58,7 @@ def test_empty_preferences_message(mem):
 
 def supervisor_handler(messages):
     last = messages[-1]
-    if isinstance(last, HumanMessage):
+    if isinstance(last, HumanMessage) and not last.content.startswith("[진행 점검"):
         return call("transfer_to_recommend_agent", i=len(messages))
     reply = next(m for m in reversed(messages) if isinstance(m, AIMessage) and m.name == "recommend_agent"
                  and not m.tool_calls)

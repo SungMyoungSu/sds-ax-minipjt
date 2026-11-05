@@ -213,10 +213,10 @@ def test_ac16_cli_scenario_pass_path(settings, tmp_path, monkeypatch):
     assert "mini: 6/6" in out and "전체: 6/6 통과" in out
     # 첨부 경로가 메시지에 붙고, 새 대화 단계는 앞 대화를 이어받지 않는다
     sup = fake.models["supervisor"].seen
-    texts = {m.content for call in sup for m in call if m.type == "human"}
+    texts = {m.content for call in sup for m in call if m.type == "human" and not m.content.startswith("[진행 점검")}
     assert any(t.startswith("회사 봉사 규정 파일 올릴게\n(첨부 파일: ") and t.endswith("volunteer_policy.md)")
                for t in texts)
-    assert [m.content for m in sup[-1] if m.type == "human"] == ["규정 확정해"]
+    assert [m.content for m in sup[-1] if m.type == "human" and not m.content.startswith("[진행 점검")] == ["규정 확정해"]
     assert fake.opened[0][1] == "fixture"
     # 임시 DATA_DIR은 지우고 단계별 trace는 실제 DATA_DIR에 남긴다
     [copy] = list((settings.data_dir / "scenario_runs").glob("*-mini-*.trace.jsonl"))
