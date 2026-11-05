@@ -101,7 +101,7 @@
 - **완료 조건:** AC8, 도구 목록 확인 통과
 - **참고:** `reference/mcp_server.py`
 
-### [ ] 11. Supervisor와 하위 에이전트 (단기 기억)
+### [x] 11. Supervisor와 하위 에이전트 (단기 기억)
 - **만들 것:** `ChatBedrockConverse`(temperature 0), `MultiServerMCPClient`로 도구를 불러와 policy, record, recommend, general Agent를 Python 코드로 정의(Agent마다 자기 도구만 바인딩), Supervisor 배분 프롬프트, checkpointer(`thread_id` 단위 대화 기억), `build_app()`
 - **테스트:** 가짜 LLM으로 Agent별 도구 경계, "응, 확정해"를 같은 대화에서 이어받는지와 새 대화에서는 기억하지 않는지(AC13). Bedrock 실연동은 키가 있을 때만 실행
 - **완료 조건:** AC13(대화 부분) 통과, 실제 키로 `build_app()`이 한 번 응답

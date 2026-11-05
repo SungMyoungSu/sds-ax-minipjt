@@ -5,7 +5,8 @@
 
 실행 맥락(환경 변수, CLI·시나리오 실행기가 넘긴다):
   DATA_DIR             데이터 폴더
-  VOLUNTEER_TODAY      기준 날짜 YYYY-MM-DD (없으면 오늘, Asia/Seoul)
+  VOLUNTEER_TODAY_FILE 기준 날짜(YYYY-MM-DD)를 담은 파일. 앱이 단계마다 바꿀 수 있다(우선)
+  VOLUNTEER_TODAY      기준 날짜 YYYY-MM-DD (둘 다 없으면 오늘, Asia/Seoul)
   VOLUNTEER_API_MODE   live | fixture (fixture면 녹화된 1365 응답 사용)
   VOLUNTEER_API_FIXTURES  fixture 폴더 (기본: tests/fixtures/api)
 
@@ -97,7 +98,10 @@ def _parse_date(value: str | None, label: str = "날짜") -> date | None:
 
 def context() -> Context:
     settings = load_settings()
-    today = _parse_date(os.environ.get("VOLUNTEER_TODAY"), "VOLUNTEER_TODAY") or datetime.now(settings.tz).date()
+    today_file = os.environ.get("VOLUNTEER_TODAY_FILE")
+    raw = Path(today_file).read_text(encoding="utf-8").strip() if today_file and Path(today_file).is_file() else None
+    today = (_parse_date(raw or os.environ.get("VOLUNTEER_TODAY"), "VOLUNTEER_TODAY")
+             or datetime.now(settings.tz).date())
     mode = (os.environ.get("VOLUNTEER_API_MODE") or "live").lower()
     fixtures = Path(os.environ.get("VOLUNTEER_API_FIXTURES") or DEFAULT_FIXTURES)
     return Context(settings, today, mode, fixtures)
@@ -569,11 +573,28 @@ def remove_from_watchlist(program_id: str) -> str:
     return f"관심 목록에서 뺐습니다(1365 번호 {program_id})." if removed else f"관심 목록에 없는 번호입니다({program_id})."
 
 
+PRELOAD_MODULES = ("numpy", "langchain_aws", "chromadb", "langchain_chroma", "pypdf", "reportlab.pdfgen.canvas", "icalendar")
+
+
+def preload_heavy_modules() -> None:
+    """무거운 C 확장 모듈을 메인 스레드에서 미리 import한다.
+    fastmcp는 동기 도구를 작업 스레드에서 실행하는데, Windows에서 numpy 같은 C 확장을 작업 스레드에서
+    처음 import하면 DLL 로딩이 멈출 수 있다(임베딩 호출 때 ingest_policy가 멈추던 원인)."""
+    import importlib
+
+    for name in PRELOAD_MODULES:
+        try:
+            importlib.import_module(name)
+        except Exception as e:  # noqa: BLE001 - 없는 모듈은 해당 기능에서 다시 안내
+            logger.warning("preload %s failed: %s", name, type(e).__name__)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.WARNING)  # stdout은 MCP 프로토콜 전용, 로그는 stderr
+    preload_heavy_modules()
     settings = load_settings()
     install_network_guard(settings)
-    mcp.run()
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":
