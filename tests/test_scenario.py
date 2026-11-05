@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from volunteer_agent.cli import main
-from volunteer_agent.guards import REFUSALS
-from volunteer_agent.memory import open_store, save_preferences
-from volunteer_agent.models import RuleCandidate, WatchlistItem
-from volunteer_agent.records import ActivityInput, RecordService
-from volunteer_agent.scenario import (
+from cli import main
+from guards import REFUSALS
+from memory import open_store, save_preferences
+from models import RuleCandidate, WatchlistItem
+from records import ActivityInput, RecordService
+from scenario import (
     Observation,
     ScenarioError,
     judge,
@@ -19,7 +19,7 @@ from volunteer_agent.scenario import (
     resolve_attachment,
     scenario_files,
 )
-from volunteer_agent.store import Store
+from store import Store
 from test_cli import FakeRuntime
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -246,7 +246,7 @@ class ThrottlingException(Exception):
 
 
 def test_is_quota_error_detects_wrapped_throttling():
-    from volunteer_agent.llm import is_quota_error
+    from llm import is_quota_error
 
     try:
         try:

@@ -64,7 +64,7 @@ v1은 본인과 지인이 Windows PC에서 쓰는 개인 도구입니다. PC 한
  사용자 ── CLI (주 화면, 평가 대상) ─────┐
          │  chat / --once / scenario    │
          │  / check / notify            │
-         └ Streamlit (보조, localhost) ──┤   같은 build_app() (app.open_app)
+         └ Streamlit (보조, localhost) ──┤   같은 build_app() (agent.open_app)
                                         ▼
                          [입력 가드레일] 1차 정규식 → 2차 LLM 판별(확신도 > 0.7)
                            │ 차단 → 고정 거절 문구 + guard_audit.log
@@ -240,18 +240,18 @@ PM 인터뷰에서 나중에 정하기로 했던 항목들을 2026-11-04에 아�
 | 7 | 계획의 주차별 목표 배분 | 남은 주에 고르게 나누고(0.5시간 단위로 올림), 선호 요일을 반영 |
 | 8 | 샘플 데이터의 날짜와 '모집 마감 전' 조건 | 샘플 날짜를 `--today` 기준 상대 날짜로 바꿔 씁니다 |
 
-### 구조도와 코드 대응 (`build_app()` = `app.open_app` → `app.compile_app`)
+### 구조도와 코드 대응 (`build_app()` = `agent.open_app` → `agent.compile_app`, 모듈은 모두 `src/` 바로 아래)
 | 구조도 요소 | 코드 |
 |---|---|
-| CLI / Streamlit | `cli.py`(`chat`, `--once`, `scenario`, `check`, `notify`, `export`, `purge`), `app.py` + `web.py`(`ChatBackend`) |
-| 입력 가드레일 | `guards.py`(`rule_check` → `InputGuard`의 LLM 판별 `InjectionCheck`, `guard_audit.log`). `app.ask(..., guard=)`가 Supervisor보다 먼저 부름 |
-| Supervisor + checkpointer | `app.compile_app`: `create_supervisor(..., output_mode="full_history")` + `InMemorySaver`(thread_id 단위) |
+| CLI / Streamlit | `cli.py`(`chat`, `--once`, `scenario`, `check`, `notify`, `export`, `purge`), 루트 `app.py`(Streamlit) + `web.py`(`ChatBackend`) |
+| 입력 가드레일 | `guards.py`(`rule_check` → `InputGuard`의 LLM 판별 `InjectionCheck`, `guard_audit.log`). `agent.ask(..., guard=)`가 Supervisor보다 먼저 부름 |
+| Supervisor + checkpointer | `agent.compile_app`(`agent.py`): `create_supervisor(..., output_mode="full_history")` + `InMemorySaver`(thread_id 단위) |
 | 하위 Agent 5개 | `agents.py`(`AGENT_TOOLS`, `AGENT_PROMPTS`, `build_agents`, 하위 Agent에는 이동 메시지를 뺀 대화 `agent_view`), `planner.py`(`build_planner`) |
 | 장기 기억 | `memory.py`(LangGraph `SqliteStore`, `save_preference`·`get_preferences` Python 도구) |
-| 로컬 MCP 서버 | `mcp_server.py`(fastmcp stdio, 도구 18개, 마스킹 `safe`, 네트워크 허용 목록 `netguard.py`) |
-| SQLite·DATA_DIR | `store.py`, `records.py`, `progress.py`, `rules.py`, `policy.py`, `rag.py`(Chroma + Titan), `recommend.py`(data.go.kr), `deadlines.py`(.ics), `reports.py`(PDF), `notify.py`(SMTP/.eml) |
+| 로컬 MCP 서버 | `tools.py`(fastmcp stdio, 도구 18개, 마스킹 `safe`, 네트워크 허용 목록 `netguard.py`) |
+| SQLite·DATA_DIR | `store.py`, `records.py`, `progress.py`, `rules.py`, `policy.py`, `retriever.py`(Chroma + Titan), `recommend.py`(data.go.kr), `deadlines.py`(.ics), `reports.py`(PDF), `notify.py`(SMTP/.eml) |
 | trace.jsonl | `tracing.py`(`FileTracer`, MCP 서버가 쓰는 `embedding_fallback`) |
-| 평가 | `scenario.py`, `evaluation.py`, `eval/run_eval.py`, `eval/llm_judge.py` |
+| 평가 | `scenario.py`, `inout_eval.py`, `round_eval.py`, `eval/run_eval.py`, `eval/llm_judge.py`, `evaluation/run_round.py`(+ `evaluation/test_queries.csv`, 라운드 리포트) |
 
 ### reference 기술 적용 대응표
 | reference 기술 | 파일 | 이 서비스에서 쓰는 곳 | 검증 |

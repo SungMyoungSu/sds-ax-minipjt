@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import streamlit as st
 
-from volunteer_agent.config import load_settings
-from volunteer_agent.web import ChatBackend, save_user_type, user_type
+from config import load_settings
+from web import ChatBackend, save_user_type, user_type
 
 USER_TYPES = {"employee": "회사원", "student": "학생"}
 
@@ -22,8 +22,8 @@ st.caption("봉사 추천, 기록, 사내 봉사 규정 안내. 신청은 1365 �
 def get_backend():
     backend = st.session_state.get("backend")
     if backend is None:
-        from volunteer_agent.cli import default_runtime
-        from volunteer_agent.llm import has_llm_credentials
+        from cli import default_runtime
+        from llm import has_llm_credentials
 
         settings = load_settings()
         if not has_llm_credentials(settings):

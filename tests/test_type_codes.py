@@ -1,4 +1,4 @@
-from volunteer_agent.type_codes import load_type_codes
+from type_codes import load_type_codes
 
 
 def test_table_loads_with_source_and_status():

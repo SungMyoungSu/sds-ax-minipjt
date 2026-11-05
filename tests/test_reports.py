@@ -3,11 +3,11 @@ from datetime import date, datetime
 import pytest
 from pypdf import PdfReader
 
-from volunteer_agent.errors import InputError
-from volunteer_agent.models import RuleCandidate
-from volunteer_agent.records import ActivityInput, RecordService
-from volunteer_agent.reports import find_korean_font, generate_report
-from volunteer_agent.rules import RULES_FIRST_MSG
+from errors import InputError
+from models import RuleCandidate
+from records import ActivityInput, RecordService
+from reports import find_korean_font, generate_report
+from rules import RULES_FIRST_MSG
 
 pytestmark = pytest.mark.skipif(find_korean_font() is None, reason="한글 폰트가 없는 환경")
 

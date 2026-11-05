@@ -6,10 +6,10 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import StructuredTool
 from langgraph.store.memory import InMemoryStore
 
-from volunteer_agent import mcp_server as srv
-from volunteer_agent.memory import memory_tools, save_preferences
-from volunteer_agent.models import RuleCandidate
-from volunteer_agent.planner import (
+import tools as srv
+from memory import memory_tools, save_preferences
+from models import RuleCandidate
+from planner import (
     PLAN_KEY,
     RECURSION_LIMIT,
     Plan,
@@ -20,8 +20,8 @@ from volunteer_agent.planner import (
     compute_plan,
     format_plan,
 )
-from volunteer_agent.records import ActivityInput, RecordService
-from volunteer_agent.store import Store
+from records import ActivityInput, RecordService
+from store import Store
 
 TODAY = date(2026, 12, 1)
 

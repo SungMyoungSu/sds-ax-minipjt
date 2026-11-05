@@ -7,16 +7,16 @@ from email import policy
 import pytest
 from icalendar import Calendar
 
-from volunteer_agent.deadlines import (
+from deadlines import (
     ICS_FILENAME,
     export_ics,
     get_upcoming_deadlines,
     sync_period_deadlines,
 )
-from volunteer_agent.models import RuleCandidate
-from volunteer_agent.notify import due_mark, run_scheduler
-from volunteer_agent.recommend import save_to_watchlist
-from volunteer_agent.records import ActivityInput, RecordService
+from models import RuleCandidate
+from notify import due_mark, run_scheduler
+from recommend import save_to_watchlist
+from records import ActivityInput, RecordService
 
 NOW = datetime(2026, 12, 1, 0, 0, tzinfo=timezone.utc)
 FAKE_PW = "fake-smtp-app-password-123"

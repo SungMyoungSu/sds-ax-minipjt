@@ -1,5 +1,5 @@
-from volunteer_agent.config import load_settings
-from volunteer_agent.masking import MASK, mask_exception, mask_secrets
+from config import load_settings
+from masking import MASK, mask_exception, mask_secrets
 
 FAKE_AKIA = "AKIAABCDEFGHIJKLMNOP"
 FAKE_SECRET = "fakeSecretAccessKey0123456789abcdefXYZ"

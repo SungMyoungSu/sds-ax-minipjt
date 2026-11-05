@@ -18,11 +18,11 @@ from pathlib import Path
 
 os.environ.setdefault("RAGAS_DO_NOT_TRACK", "true")
 
-from volunteer_agent.cli import default_runtime  # noqa: E402
-from volunteer_agent.config import load_settings  # noqa: E402
-from volunteer_agent.llm import has_llm_credentials, make_llm  # noqa: E402
-from volunteer_agent.rag import make_embeddings  # noqa: E402
-from volunteer_agent.round_eval import load_cases, round_meta, run_round, save_round  # noqa: E402
+from cli import default_runtime  # noqa: E402
+from config import load_settings  # noqa: E402
+from llm import has_llm_credentials, make_llm  # noqa: E402
+from retriever import make_embeddings  # noqa: E402
+from round_eval import load_cases, round_meta, run_round, save_round  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -34,7 +34,7 @@ def main() -> int:
     parser.add_argument("--round", type=int, required=True)
     parser.add_argument("--changes", type=Path, help="이번 라운드 전에 바꾼 내용(Markdown)")
     parser.add_argument("--only", help="일부 문항 id(쉼표로 구분)")
-    parser.add_argument("--cases", type=Path, default=ROOT / "test_queries.csv")
+    parser.add_argument("--cases", type=Path, default=ROOT / "evaluation" / "test_queries.csv")
     args = parser.parse_args()
 
     try:

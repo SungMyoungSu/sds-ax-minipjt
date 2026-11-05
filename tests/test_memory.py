@@ -6,10 +6,10 @@ from datetime import date
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from volunteer_agent.app import AppClock, ask, compile_app
-from volunteer_agent.errors import InputError
-from volunteer_agent.memory import MEMORY_FILENAME, describe, load_preferences, open_store, save_preferences
-from test_app import ScriptedChat, StubTools, call, general_handler, is_handoff, last_human
+from agent import AppClock, ask, compile_app
+from errors import InputError
+from memory import MEMORY_FILENAME, describe, load_preferences, open_store, save_preferences
+from test_agent import ScriptedChat, StubTools, call, general_handler, is_handoff, last_human
 
 
 @pytest.fixture

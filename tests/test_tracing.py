@@ -9,12 +9,12 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 from langgraph.store.memory import InMemoryStore
 
-from volunteer_agent import mcp_server as srv
-from volunteer_agent.app import AppClock, ask, compile_app
-from volunteer_agent.guards import InputGuard
-from volunteer_agent.tracing import SUMMARY_LEN, FileTracer, read_trace, summarize, trace_path
-from test_app import ScriptedChat, StubTools, general_handler, policy_handler, supervisor_handler
-from test_rag import FailingEmbeddings
+import tools as srv
+from agent import AppClock, ask, compile_app
+from guards import InputGuard
+from tracing import SUMMARY_LEN, FileTracer, read_trace, summarize, trace_path
+from test_agent import ScriptedChat, StubTools, general_handler, policy_handler, supervisor_handler
+from test_retriever import FailingEmbeddings
 
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "eval" / "fixtures"
@@ -82,7 +82,7 @@ def test_llm_end_records_tokens_and_tool_calls(settings):
 
 def test_guard_llm_call_is_labeled(settings):
     from test_guards import FakeJudge
-    from volunteer_agent.guards import InjectionCheck
+    from guards import InjectionCheck
 
     class TaggedJudge(FakeJudge):  # 받은 config를 그대로 콜백에 흘려 보낸다
         def with_structured_output(self, schema):

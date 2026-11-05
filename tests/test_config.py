@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from volunteer_agent.config import ConfigError, load_settings
+from config import ConfigError, load_settings
 
 FAKE_AWS_SECRET = "fakeSecretAccessKey0123456789abcdefXYZ"
 FAKE_DATA_KEY = "fakeDataGoKrKey+/=0123456789"
@@ -108,7 +108,7 @@ def test_secrets_hidden_from_repr_and_str():
 
 
 def test_default_policy_file(tmp_path):
-    from volunteer_agent.config import DEFAULT_POLICY_FILE, PROJECT_ROOT
+    from config import DEFAULT_POLICY_FILE, PROJECT_ROOT
 
     s = load_settings(env_file=None, environ={})
     assert s.default_policy_file == DEFAULT_POLICY_FILE

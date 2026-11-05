@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 
-from volunteer_agent.models import (
+from models import (
     Activity,
     Deadline,
     Notification,
@@ -14,7 +14,7 @@ from volunteer_agent.models import (
     RuleCandidate,
     WatchlistItem,
 )
-from volunteer_agent.store import DB_FILENAME, SCHEMA_VERSION, Store, StoreError
+from store import DB_FILENAME, SCHEMA_VERSION, Store, StoreError
 
 TABLES = {
     "user_settings", "profiles", "policy_documents", "policy_clauses", "rule_candidates",

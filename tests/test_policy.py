@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from volunteer_agent.errors import InputError
-from volunteer_agent.policy import (
+from errors import InputError
+from policy import (
     NO_DOCUMENTS,
     NO_EVIDENCE,
     ingest_policy,
@@ -167,7 +167,7 @@ def test_instruction_in_document_is_just_data(store, tmp_path):
 
 def test_split_handles_chapters_addenda_and_forms():
     """장 제목·부칙·별첨이 있는 규정: 부칙 조항은 본문과 구분하고, 장 제목·구분선은 앞 조항에 붙지 않는다."""
-    from volunteer_agent.policy import split_clauses
+    from policy import split_clauses
 
     text = ("# 규정\n\n---\n\n## 제1장 총칙\n\n### 제1조 (목적)\n목적이다.\n\n---\n\n## 제2장 운영\n\n"
             "### 제2조 (시간)\n연 8시간.\n\n## 부칙\n\n### 제1조 (시행일)\n2026년부터.\n\n## [별첨]\n\n"
@@ -182,7 +182,7 @@ def test_split_handles_chapters_addenda_and_forms():
 
 def test_verb_endings_are_stripped_for_evidence():
     """'전도하는'이 원문의 '전도·포교'와 맞아야 근거 없음으로 잘못 답하지 않는다."""
-    from volunteer_agent.policy import key_terms
+    from policy import key_terms
 
     assert key_terms("교회에서 전도하는 활동도 봉사로 쳐줘?") == ["교회", "전도", "쳐줘"]
     assert "헌혈" in key_terms("헌혈도 봉사시간으로 인정돼?")

@@ -8,13 +8,13 @@ from datetime import date
 from langchain_core.messages import HumanMessage
 from langgraph.store.memory import InMemoryStore
 
-from volunteer_agent.app import compile_app
-from volunteer_agent.cli import PURGE_PHRASE, Runtime, main, with_attachment
-from volunteer_agent.guards import REFUSALS, InputGuard
-from volunteer_agent.models import Deadline
-from volunteer_agent.store import Store
-from volunteer_agent.tracing import read_trace, trace_path
-from test_app import ScriptedChat, StubTools, general_handler, policy_handler, supervisor_handler
+from agent import compile_app
+from cli import PURGE_PHRASE, Runtime, main, with_attachment
+from guards import REFUSALS, InputGuard
+from models import Deadline
+from store import Store
+from tracing import read_trace, trace_path
+from test_agent import ScriptedChat, StubTools, general_handler, policy_handler, supervisor_handler
 
 
 class FakeRuntime:

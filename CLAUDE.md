@@ -5,6 +5,8 @@
 - 무엇을 만들지와 수용 기준: `seeds/volunteer-agent-v2.seed.yaml`
 - 기능별 상세 요구사항(PM 인터뷰 결과): `PRD.md`
 - 평가셋: `eval/eval_set.json`
+- 소스: `src/` 바로 아래 모듈(제출 구조). 메인 그래프 `src/agent.py`, 도메인 도구(MCP 서버) `src/tools.py`, RAG `src/retriever.py`, Agent 정의 `src/agents.py`
+- 인-아웃 세트: `evaluation/test_queries.csv`(제출 스키마 7컬럼), 라운드 리포트 `evaluation/roundN_report.md`
 - 참고 코드: `reference/` (Day7 체크포인트. **읽기 전용이므로 수정하지 않습니다.**)
 
 ## 작업 방식
@@ -88,6 +90,7 @@ uv run streamlit run app.py               # 로컬 화면 (보조)
 uv run volunteer-agent export             # DATA_DIR zip 내보내기
 uv run volunteer-agent purge              # DATA_DIR 삭제 (확인 문구 필요)
 uv run volunteer-agent notify             # 마감 알림 점검 1회 (Windows 작업 스케줄러용)
+uv run python evaluation/run_round.py --round N   # 인-아웃 세트 자체 평가 (LLM 심사 + RAGAS 지표 → evaluation/roundN_report.md)
 ```
 
 ## 완료 기준 (DoD)

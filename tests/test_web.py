@@ -3,9 +3,9 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import HumanMessage
 
-from volunteer_agent.guards import REFUSALS
-from volunteer_agent.store import Store
-from volunteer_agent.web import ChatBackend, Reply, pdfs_in
+from guards import REFUSALS
+from store import Store
+from web import ChatBackend, Reply, pdfs_in
 from test_cli import FakeRuntime
 
 ROOT = Path(__file__).resolve().parents[1]

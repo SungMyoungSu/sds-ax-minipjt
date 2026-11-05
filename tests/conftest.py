@@ -3,8 +3,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from volunteer_agent.config import load_settings
-from volunteer_agent.store import Store
+from config import load_settings
+from store import Store
 
 # .env.example의 변수 이름. 테스트가 개발자 PC의 환경 변수나 .env에 영향을 받지 않게 지운다.
 ENV_NAMES = [

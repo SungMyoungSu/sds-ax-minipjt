@@ -2,8 +2,8 @@ from datetime import date
 
 import pytest
 
-from volunteer_agent.models import RuleCandidate
-from volunteer_agent.records import (
+from models import RuleCandidate
+from records import (
     ActivityInput,
     InputError,
     RecordService,

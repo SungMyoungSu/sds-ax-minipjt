@@ -7,10 +7,10 @@
 import asyncio
 import sys
 
-from volunteer_agent.cli import default_runtime
-from volunteer_agent.config import load_settings
-from volunteer_agent.evaluation import EVAL_DIR, judge_report, load_json, run_judge, validate_judge_set
-from volunteer_agent.llm import has_llm_credentials, make_llm
+from cli import default_runtime
+from config import load_settings
+from inout_eval import EVAL_DIR, judge_report, load_json, run_judge, validate_judge_set
+from llm import has_llm_credentials, make_llm
 
 
 def main() -> int:

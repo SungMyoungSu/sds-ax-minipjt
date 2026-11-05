@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from volunteer_agent.config import load_settings
-from volunteer_agent.errors import InputError
-from volunteer_agent.recommend import (
+from config import load_settings
+from errors import InputError
+from recommend import (
     SAMPLE_NOTICE,
     ApiError,
     FixtureFetcher,
@@ -258,7 +258,7 @@ def test_live_1365_search():
 
 # ---- 시군구(구) 단위 지역 필터 ----
 
-from volunteer_agent.recommend import load_gugun_codes, resolve_region  # noqa: E402
+from recommend import load_gugun_codes, resolve_region  # noqa: E402
 
 
 @pytest.mark.parametrize("text, sido, gugun, local", [

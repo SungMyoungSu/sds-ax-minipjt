@@ -17,7 +17,7 @@
 ## 아키텍처
 ```
  사용자 ── CLI(chat / --once / scenario / check)  ┐
-        └ Streamlit(localhost, 채팅·PDF 다운로드) ┘ 같은 build_app() = app.open_app → app.compile_app
+        └ Streamlit(localhost, 채팅·PDF 다운로드) ┘ 같은 build_app() = agent.open_app → agent.compile_app
                          │
             [입력 가드레일] 정규식 → LLM 판별 ── 차단 → 고정 거절 문구 1개 + guard_audit.log
                          │ 통과
@@ -37,7 +37,8 @@
 
 ## 실행 방법
 ```bash
-uv sync                                    # Python 3.13, uv
+uv sync                                    # Python 3.13, uv (uv가 없으면: pip install -r requirements.txt, PYTHONPATH=src)
+./run.sh setup | chat | web | test | round N   # 같은 일을 하는 실행 스크립트
 cp .env.example .env                       # Bedrock(LLM_MODEL, AWS 키, EMBEDDING_MODEL), DATA_GO_KR_KEY 입력
 
 uv run volunteer-agent chat --show-trace   # 대화형 (처음 실행 시 회사원/학생 선택, '종료'로 끝)
@@ -58,14 +59,14 @@ uv run volunteer-agent export | purge      # 데이터 백업 / 삭제(확인 �
 - 기본 사내규정: 파일 없이 "회사 규정 등록해줘"라고 하면 `data/policies/사회공헌_봉사활동_규정.md`를 등록한다.
 
 ## RAGAS 평가 결과
-인-아웃 세트(`test_queries.csv`) 중 규정 검색(`search_policy`)을 쓰는 문항으로 산출한다. 라운드별 상세는 [`evaluation/`](evaluation/)의 리포트를 본다.
+인-아웃 세트(`evaluation/test_queries.csv`) 중 규정 검색(`search_policy`)을 쓰는 문항으로 산출한다. 라운드별 상세는 [`evaluation/`](evaluation/)의 리포트를 본다.
 - context_recall: 아래 라운드 리포트 참고 (측정 후 갱신)
 - context_precision: 〃
 - faithfulness: 〃
 - answer_relevancy: 〃
 
 ## 인-아웃 세트 통과율 (자체 평가)
-`test_queries.csv` 21건(positive 8 · negative 4 · edge 5 · guardrail 4). 판정: 기대 도구 호출 + LLM 심사(expected_traits 충족, forbidden 없음) + guardrail은 고정 문구 완전 일치.
+`evaluation/test_queries.csv` 24건(positive 11 · negative 4 · edge 5 · guardrail 4). 판정: 기대 도구 호출 + LLM 심사(expected_traits 충족, forbidden 없음) + guardrail은 고정 문구 완전 일치.
 - 1차: [`evaluation/round1_report.md`](evaluation/round1_report.md) (측정 후 갱신)
 - 2차: [`evaluation/round2_report.md`](evaluation/round2_report.md) (개선 후 측정)
 - 개선폭: 측정 후 갱신
@@ -93,12 +94,12 @@ uv run volunteer-agent export | purge      # 데이터 백업 / 삭제(확인 �
 - 학생 시나리오는 최근 수정 후 재확인하지 않았다(마지막 11/13).
 
 ## 핵심 코드 위치
-- `src/volunteer_agent/app.py:130` — `compile_app`: Supervisor + 하위 Agent 조립(메인 그래프), `:88` `RouteFirstChat`, `:211` `ask`(가드레일 → Supervisor → 답 조립)
-- `src/volunteer_agent/agents.py:18` — Agent별 도구 경계(`AGENT_TOOLS`), `:108` Supervisor 배분 기준, `:208` `build_agents`
-- `src/volunteer_agent/planner.py:179` — Plan-and-Execute 그래프(planner_agent)
-- `src/volunteer_agent/mcp_server.py:56` — MCP 도구 18개(도메인 도구)
-- `src/volunteer_agent/rag.py:68` — 규정 하이브리드 검색(RAG 파이프라인), `policy.py:77` 조항 분할
-- `src/volunteer_agent/guards.py:130` — 입력 가드레일(정규식 → LLM 판별)
-- `src/volunteer_agent/recommend.py:466` — 1365 추천(`:356` 시도·시군구 해석)
-- `src/volunteer_agent/memory.py:83` — 장기 기억(선호) 도구, `tracing.py:94` 실행 추적
-- `src/volunteer_agent/scenario.py`, `evaluation.py`, `evaluation/run_round.py` — 시나리오·인-아웃·라운드 평가
+- `src/agent.py:131` — 메인 에이전트 그래프 `compile_app`(Supervisor + 하위 Agent 조립), `:89` `RouteFirstChat`, `:213` `ask`(가드레일 → Supervisor → 답 조립)
+- `src/agents.py:18` — Agent별 도구 경계(`AGENT_TOOLS`), `:108` Supervisor 배분 기준, `:208` `build_agents`
+- `src/tools.py:56` — 도메인 도구 18개(fastmcp MCP 서버)
+- `src/retriever.py:68` — RAG 파이프라인(BM25 + Titan + Chroma 하이브리드), `src/policy.py:77` 조항 분할
+- `src/planner.py:179` — Plan-and-Execute 그래프(planner_agent)
+- `src/guards.py:130` — 입력 가드레일(정규식 → LLM 판별)
+- `src/recommend.py:465` — 1365 추천(`:355` 시도·시군구 해석)
+- `src/memory.py:83` — 장기 기억(선호) 도구, `src/tracing.py:94` 실행 추적
+- `src/round_eval.py`, `evaluation/run_round.py` — 인-아웃 세트 라운드 평가(LLM 심사 + RAGAS 지표), `src/scenario.py`, `src/inout_eval.py` — 시나리오·인-아웃 12건·통합 점검

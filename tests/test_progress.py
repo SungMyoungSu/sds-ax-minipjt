@@ -2,8 +2,8 @@ from datetime import date
 
 import pytest
 
-from volunteer_agent.models import Activity, Profile
-from volunteer_agent.progress import Period, activity_status, compute_progress, period_for
+from models import Activity, Profile
+from progress import Period, activity_status, compute_progress, period_for
 
 TODAY = date(2026, 11, 4)
 ENV, EDU, LIFE = "0800", "0400", "0100"

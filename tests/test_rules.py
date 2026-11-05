@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from volunteer_agent.errors import InputError
-from volunteer_agent.policy import ingest_policy
-from volunteer_agent.records import ActivityInput, RecordService
-from volunteer_agent.rules import (
+from errors import InputError
+from policy import ingest_policy
+from records import ActivityInput, RecordService
+from rules import (
     NOT_CONFIRMED_MSG,
     RuleDraft,
     RuleEdits,
@@ -18,7 +18,7 @@ from volunteer_agent.rules import (
     propose_rule_change,
     propose_rules,
 )
-from volunteer_agent.type_codes import map_policy_terms
+from type_codes import map_policy_terms
 
 FIX = Path(__file__).resolve().parents[1] / "eval" / "fixtures"
 TODAY = date(2026, 3, 20)

@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 from langgraph.store.memory import InMemoryStore
 
-from volunteer_agent.app import AppClock, ask, compile_app
-from volunteer_agent.config import load_settings
-from volunteer_agent.guards import REFUSALS, InjectionCheck, InputGuard, rule_check
-from volunteer_agent.llm import has_llm_credentials, make_llm
-from test_app import ScriptedChat, StubTools, general_handler
+from agent import AppClock, ask, compile_app
+from config import load_settings
+from guards import REFUSALS, InjectionCheck, InputGuard, rule_check
+from llm import has_llm_credentials, make_llm
+from test_agent import ScriptedChat, StubTools, general_handler
 
 ROOT = Path(__file__).resolve().parents[1]
 FAKE_KEY = "AKIAFAKEFAKEFAKEFAKE"
