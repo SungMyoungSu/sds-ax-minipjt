@@ -148,7 +148,7 @@
 - **테스트:** AC16(가짜 LLM으로 PASS와 FAIL 경로 모두)
 - **완료 조건:** AC16(판정 로직) 통과
 
-### [ ] 18. 인-아웃 평가, LLM 심사, 통합 점검
+### [x] 18. 인-아웃 평가, LLM 심사, 통합 점검
 - **만들 것:** `eval/run_eval.py`(12건, 문항마다 새 대화, 가드레일을 앞단에 둠, DoD 출력), `eval/llm_judge.py` + `eval/judge_set.json`(6문항, 고정 루브릭), `volunteer-agent check`. `run_eval`의 차단 판정 신호는 고정 거절 문구 5개 전부를 기준으로 한다(인-아웃 guardrail 3문항: 주입 차단, 신청 대행 차단, 정상 통과)
 - **테스트:** 평가셋 형식 검사(malformed·unsupported 0건), 심사 출력 형식, check 출력
 - **완료 조건:** AC11, AC20 (a)(b) 통과(형식 부분)

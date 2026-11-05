@@ -6,6 +6,7 @@
     volunteer-agent purge [--confirm 문구]        DATA_DIR 삭제(확인 문구가 정확해야 함)
     volunteer-agent notify [--today 날짜]         마감 알림 점검 1회(Windows 작업 스케줄러용)
     volunteer-agent scenario <파일|폴더>          CLI 시나리오 평가(단계별 PASS/FAIL, 실패가 있으면 종료 코드 1)
+    volunteer-agent check                         통합 점검(복합 질문 + 주입 + 정상 질문, trace 경로 출력)
 
 공통 옵션: --user-type employee|student(첫 실행 질문 대신), --today YYYY-MM-DD, --show-trace, --api-mode fixture|live,
 --attach 파일(--once와 함께, 규정·확인서 파일 첨부)
@@ -302,6 +303,20 @@ def run_scenarios(settings: Settings, args: argparse.Namespace, console: Console
     return 0 if all(r.passed == len(r.results) for r in reports) else 1
 
 
+def run_integration_check(settings: Settings, console: Console, runtime: Runtime | None) -> int:
+    """복합 질문 1개, 주입 시도 1개, 정상 질문 1개를 실행해 결과와 trace 경로를 출력한다(AC20 b)."""
+    from volunteer_agent.evaluation import run_check
+
+    if runtime is None:
+        from volunteer_agent.llm import has_llm_credentials
+
+        if not has_llm_credentials(settings):
+            console.say("Bedrock 설정(LLM 모델, AWS 키)이 .env에 없어 점검을 실행할 수 없습니다.")
+            return 2
+        runtime = default_runtime()
+    return asyncio.run(run_check(settings, runtime, say=console.say))
+
+
 # ---------------------------------------------------------------- 인자
 
 def _common(parser: argparse.ArgumentParser, suppress: bool) -> None:
@@ -330,6 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     scen.add_argument("target", type=Path, help="시나리오 .yaml 파일 또는 폴더")
     scen.add_argument("--keep", action="store_true", help="시나리오별 임시 DATA_DIR을 지우지 않고 남김")
     scen.add_argument("--show-answers", action="store_true", help="통과한 단계의 답변도 출력")
+    sub.add_parser("check", help="통합 점검(복합 질문 + 주입 + 정상 질문)")
     note = sub.add_parser("notify", help="마감 알림 점검 1회(작업 스케줄러용)")
     note.add_argument("--today", type=parse_today, default=argparse.SUPPRESS)
     return parser
@@ -363,6 +379,8 @@ def main(argv: list[str] | None = None, *, stdin: TextIO | None = None, stdout: 
         return notify(settings, args.today, console)
     if args.command == "scenario":
         return run_scenarios(settings, args, console, runtime)
+    if args.command == "check":
+        return run_integration_check(settings, console, runtime)
     if args.command != "chat" and args.once is None:
         parser.print_help(console.stdout)
         return 0
