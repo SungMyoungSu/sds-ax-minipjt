@@ -23,7 +23,7 @@
 
 ## M1. 기반과 핵심 엔진
 
-### [ ] 1. 프로젝트 골격과 설정
+### [x] 1. 프로젝트 골격과 설정
 - **만들 것:** `pyproject.toml`(uv, Python 3.13, 패키지 `volunteer_agent`, 콘솔 명령 `volunteer-agent`), `src/volunteer_agent/` 패키지, 설정 로더(`.env`를 읽고 `.env.example`의 변수 이름 사용, `DATA_DIR`·`APP_TIMEZONE` 기본값), 비밀 값 마스킹 함수, pytest 설정(임시 `DATA_DIR` fixture)
 - **테스트:** 설정 기본값, `.env`가 없을 때 동작, 마스킹 함수(가짜 키, `AKIA…`, `serviceKey=…` 패턴)
 - **완료 조건:** `uv sync`, `uv run pytest` 통과. 관련 AC13(일부), AC8(일부)
