@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import time
+import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -21,12 +22,13 @@ from typing import Annotated, Any
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.prebuilt import InjectedState
 from langgraph_supervisor import create_supervisor
 
-from agents import AGENT_TOOLS, PROGRESS_NOTE_PREFIX, ForcedToolChat, build_agents, supervisor_prompt
+from agents import AGENT_TOOLS, ForcedToolChat, build_agents, supervisor_prompt
 from memory import memory_tools, open_store
 from config import Settings
 from llm import get_text, make_llm
@@ -86,21 +88,89 @@ def wire_tools(tools: list[BaseTool]) -> list[BaseTool]:
     return [bind_user_confirmation(t) if t.name == "confirm_rules" else t for t in tools]
 
 
-class RouteFirstChat(ForcedToolChat):
-    """Supervisor 모델 감싸개. 턴 시작(마지막 메시지가 사용자 발화)에는 tool_choice="any"로 불러
-    반드시 transfer_to_* 하나를 고르게 한다. 하위 Agent가 돌아온 뒤에는 보통대로 불러 빈 응답으로 끝낼 수 있다.
+ROUTE_TOOL = "route_plan"
+ROUTE_PLAN_KEY = "route_plan"  # 계획을 저장하는 Supervisor 메시지의 response_metadata 키(checkpointer에 함께 저장됨)
+MAX_ROUTE = 3
 
-    Supervisor가 앞 대화 내용으로 직접 답해 담당 Agent·도구를 건너뛰는 일이 있었다(시나리오 S2-4).
-    프롬프트 메모로 막으려 하니 메모를 새 요청으로 받아 오히려 직접 답해서(17/26), 모델 호출 옵션으로 강제한다."""
+
+def _route_tool(agents: list[str]) -> dict:
+    return {"type": "function", "function": {
+        "name": ROUTE_TOOL,
+        "description": "이번 사용자 요청을 처리할 Agent를 처리할 순서대로 모두 적는다. 적은 Agent만 차례로 실행된다.",
+        "parameters": {"type": "object", "required": ["agents"], "properties": {"agents": {
+            "type": "array", "minItems": 1, "maxItems": MAX_ROUTE, "items": {"type": "string", "enum": agents}}}}}}
+
+
+class RouteFirstChat(ForcedToolChat):
+    """Supervisor 모델 감싸개. 턴마다 LLM을 한 번만 부른다.
+
+    - 턴 시작(마지막 메시지가 사용자 발화): route_plan 도구를 tool_choice="any"로 강제해 이번 요청의 Agent 순서를
+      한 번에 받고, 첫 Agent로 넘기는 transfer_to_* 호출을 만든다. 계획은 그 메시지의 response_metadata에 둔다.
+    - 하위 Agent가 돌아온 뒤: LLM 없이 계획에서 다음 Agent로 넘기고, 다 거쳤으면 빈 응답으로 끝낸다.
+
+    이전에는 Agent가 돌아올 때마다 Supervisor LLM이 '다음 Agent가 있나, 끝낼까'를 다시 판단했다. 그 호출이 LLM 시간의
+    20~22%였고, 두 번째 Agent를 빠뜨리거나(S3-1, S7-1, S8-4) 같은 Agent를 왕복하는 문제도 거기서 났다.
+    턴 시작 강제 자체는 Supervisor가 앞 대화로 직접 답해 Agent를 건너뛰던 문제(S2-4) 때문에 둔다."""
 
     @property
     def _llm_type(self) -> str:
-        return "route-first"
+        return "route-plan"
 
-    def _force(self, messages: list[Any]) -> bool:
-        last = messages[-1] if messages else None
-        # 하위 Agent가 돌아온 뒤 붙는 진행 점검 메모(사람 메시지 형태)는 턴 시작이 아니다. 여기서 강제하면 끝낼 수 없다.
-        return isinstance(last, HumanMessage) and not get_text(last).startswith(PROGRESS_NOTE_PREFIX)
+    def _force(self, messages: list[Any]) -> bool:  # ForcedToolChat 규약. 실제 분기는 _decide
+        return bool(messages) and isinstance(messages[-1], HumanMessage)
+
+    @staticmethod
+    def _agents(tools: list[dict] | None) -> list[str]:
+        names = [t["function"]["name"] for t in tools or []]
+        return [n.removeprefix("transfer_to_") for n in names if n.startswith("transfer_to_")]
+
+    @staticmethod
+    def _handoff(agent: str, plan: list[str]) -> AIMessage:
+        call = {"name": f"transfer_to_{agent}", "args": {}, "id": f"route_{uuid.uuid4().hex[:16]}", "type": "tool_call"}
+        return AIMessage(content="", tool_calls=[call], response_metadata={ROUTE_PLAN_KEY: plan})
+
+    def _next(self, messages: list[Any]) -> AIMessage:
+        """Agent가 돌아온 뒤: 이번 턴 계획에서 아직 거치지 않은 다음 Agent, 없으면 빈 응답(끝)."""
+        start = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1)
+        plan, done = None, 0
+        for m in messages[start + 1:]:
+            if not isinstance(m, AIMessage):
+                continue
+            if plan is None and ROUTE_PLAN_KEY in (m.response_metadata or {}):
+                plan = list(m.response_metadata[ROUTE_PLAN_KEY])
+            done += sum(1 for c in m.tool_calls or [] if c["name"].startswith("transfer_to_"))
+        if plan and done < len(plan):
+            return self._handoff(plan[done], plan)
+        return AIMessage(content="")
+
+    def _plan_from(self, response: AIMessage, agents: list[str]) -> list[str]:
+        """LLM 응답에서 계획을 꺼낸다. route_plan을 쓰지 않고 transfer_to_*를 바로 부른 경우도 계획으로 받는다."""
+        picked: list[str] = []
+        for c in response.tool_calls or []:
+            if c["name"] == ROUTE_TOOL:
+                picked += [a for a in c["args"].get("agents") or [] if isinstance(a, str)]
+            elif c["name"].startswith("transfer_to_"):
+                picked.append(c["name"].removeprefix("transfer_to_"))
+        plan = [a for a in dict.fromkeys(picked) if a in agents][:MAX_ROUTE]
+        return plan or (["general_agent"] if "general_agent" in agents else agents[:1])
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        tools = kwargs.pop("tools", None)
+        if not self._force(messages):
+            return ChatResult(generations=[ChatGeneration(message=self._next(messages))])
+        agents = self._agents(tools)
+        response = self.inner.bind_tools([_route_tool(agents)], tool_choice="any").invoke(messages)
+        plan = self._plan_from(response, agents)
+        return ChatResult(generations=[ChatGeneration(message=self._handoff(plan[0], plan))])
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        tools = kwargs.pop("tools", None)
+        if not self._force(messages):
+            return ChatResult(generations=[ChatGeneration(message=self._next(messages))])
+        agents = self._agents(tools)
+        response = await self.inner.bind_tools([_route_tool(agents)], tool_choice="any").ainvoke(messages)
+        plan = self._plan_from(response, agents)
+        return ChatResult(generations=[ChatGeneration(message=self._handoff(plan[0], plan))])
 
 
 def compile_app(llm_for: Callable[[str], Any], tools: list[BaseTool], clock: AppClock, checkpointer=None,

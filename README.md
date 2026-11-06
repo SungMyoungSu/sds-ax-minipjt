@@ -83,7 +83,7 @@ uv run volunteer-agent export | purge      # 데이터 백업 / 삭제(확인 �
 - **지역을 시도 단위로만 필터:** "동작구"를 물어도 서울 전역이 나왔다.
 
 **최종 채택한 접근**
-- 프롬프트가 아니라 **코드로 강제**: 턴 시작에 Supervisor 모델을 `tool_choice="any"`로 호출(`RouteFirstChat`), 답변은 Agent 답을 그대로 잇기(`agents_answer`), 하위 Agent가 보는 대화에서 이동 메시지와 Supervisor 발화 제거(`agent_view`).
+- 프롬프트가 아니라 **코드로 강제**: 턴 시작에 Supervisor 모델을 `tool_choice="any"`로 한 번만 불러 이번 요청의 Agent 순서(`route_plan`)를 받고, 이후 Agent 이동과 종료는 LLM 없이 코드가 처리(`RouteFirstChat`, 재배분·마무리 호출 제거로 LLM 시간의 약 20% 절감 목표), 답변은 Agent 답을 그대로 잇기(`agents_answer`), 하위 Agent가 보는 대화에서 이동 메시지와 Supervisor 발화 제거(`agent_view`).
 - **도구가 역할을 나눠 갖게 설계**: 기록 도구는 상태만, 남은 시간은 `get_progress`만, 확인서는 `attach_certificate`만 돌려준다.
 - 1365 API의 `schSign1`(시군구)을 실제 호출로 확인하고 서울 25개 구 코드를 검증해 코드표로 둠.
 - 평가 실행기가 Bedrock 사용 한도(ThrottlingException)를 만나면 남은 문항을 돌리지 않고 종료 코드 3으로 멈춤.
@@ -95,8 +95,8 @@ uv run volunteer-agent export | purge      # 데이터 백업 / 삭제(확인 �
 - 학생 시나리오는 최근 수정 후 재확인하지 않았다(마지막 11/13).
 
 ## 핵심 코드 위치
-- `src/agent.py:131` — 메인 에이전트 그래프 `compile_app`(Supervisor + 하위 Agent 조립), `:89` `RouteFirstChat`, `:213` `ask`(가드레일 → Supervisor → 답 조립)
-- `src/agents.py:19` — Agent별 도구 경계(`AGENT_TOOLS`), `:174` Supervisor 배분 기준, `:278` `build_agents`
+- `src/agent.py:176` — 메인 에이전트 그래프 `compile_app`(Supervisor + 하위 Agent 조립), `:104` `RouteFirstChat`(배분 계획), `:258` `ask`(가드레일 → Supervisor → 답 조립)
+- `src/agents.py:19` — Agent별 도구 경계(`AGENT_TOOLS`), `:180` Supervisor 배분 기준, `:255` `build_agents`
 - `src/tools.py:56` — 도메인 도구 18개(fastmcp MCP 서버)
 - `src/retriever.py:68` — RAG 파이프라인(BM25 + Titan + Chroma 하이브리드), `src/policy.py:77` 조항 분할
 - `src/planner.py:179` — Plan-and-Execute 그래프(planner_agent)

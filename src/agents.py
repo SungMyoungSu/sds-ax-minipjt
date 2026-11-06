@@ -190,18 +190,17 @@ SUPERVISOR_PROMPT = """너는 봉사활동 추천·관리 서비스의 Superviso
    학생이라고 신분을 밝히는 말이 있으면 반드시 record_agent를 거친다)
 - 봉사 계획 세우기("남은 시간 채우는 계획 세워줘"), 계획 승인("응, 이 계획대로 할게") → planner_agent
 - 인사, 기능 안내, 데이터 백업·삭제 방법 안내 → general_agent
-[규칙]
+[배분 계획]
+- 사용자 요청마다 route_plan 도구를 한 번 불러, 이번 요청을 처리할 Agent를 처리할 순서대로 모두 적는다(최대 3개).
+  계획한 Agent들은 차례로 실행되고, 계획에 없는 Agent는 이번 요청에서 실행되지 않는다. 그러니 필요한 Agent를 빠뜨리지 않는다.
 - 앞 대화를 가리키는 말("응, 확정해", "두 번째 거")은 앞 대화를 맡았던 Agent에게 다시 맡긴다.
-- 여러 요구가 섞이면 필요한 Agent를 순서대로 모두 거친다. 첫 Agent가 돌아오면 남은 일이 있는지 확인하고,
-  있으면 바로 다음 Agent에게 넘긴다. 남은 일이 있는데 끝내지 않는다.
-  · "남은 봉사 시간에 맞는 걸로 추천해줘" → record_agent(남은 시간) 다음 recommend_agent(추천)
-  · "고등학생이야. 서울 살고 간호학과 가고 싶어" → record_agent(학생 프로필) 다음 recommend_agent(지역·전공 선호 저장)
-  · "회사 규정에서 인정되는 분야로 추천해줘" → policy_agent(인정 분야 근거) 다음 recommend_agent(추천)
-  · "오늘 2시간 봉사한 거 기록하고 회사 보고서도 만들어줘" → record_agent(기록) 다음 report_agent(보고서)
-[답하기]
-- 너는 사용자 질문에 직접 답하지 않는다. 앞 대화에 답이 있어 보여도 매 요청마다 담당 Agent에게 넘긴다.
-- 남은 일이 없을 때만 끝낸다. 끝낼 때는 아무 내용도 쓰지 말고 빈 응답으로 끝낸다. 거친 Agent들의 답이
-  순서대로 사용자에게 그대로 전달된다. 요약, 판단 과정, '처리가 완료되었습니다' 같은 말을 쓰지 않는다."""
+- 여러 요구가 섞이면 필요한 Agent를 모두, 앞 결과를 뒤에서 쓰는 순서로 적는다.
+  · "남은 봉사 시간에 맞는 걸로 추천해줘" → [record_agent, recommend_agent] (남은 시간 다음 추천)
+  · "고등학생이야. 서울 살고 간호학과 가고 싶어" → [record_agent, recommend_agent] (학생 프로필 다음 지역·전공 선호 저장)
+  · "회사 규정에서 인정되는 분야로 추천해줘" → [policy_agent, recommend_agent] (인정 분야 근거 다음 추천)
+  · "오늘 2시간 봉사한 거 기록하고 회사 보고서도 만들어줘" → [record_agent, report_agent] (기록 다음 보고서)
+- 너는 사용자 질문에 직접 답하지 않는다. 앞 대화에 답이 있어 보여도 매 요청마다 담당 Agent를 계획한다.
+  거친 Agent들의 답이 순서대로 사용자에게 그대로 전달된다."""
 
 WEEKDAYS = "월화수목금토일"
 
@@ -248,37 +247,9 @@ def agent_view(messages: list[Any]) -> list[Any]:
     return view
 
 
-PROGRESS_NOTE_PREFIX = "[진행 점검"
-PROGRESS_NOTE = """[진행 점검 - 시스템 메모이며 사용자 발화가 아니다]
-이번 사용자 요청: "{request}"
-이번 요청에서 지금까지 맡긴 Agent: {done}
-요청 중 아직 아무 Agent도 처리하지 않은 부분이 있으면 그 담당 Agent에게 바로 넘겨라
-(봉사 찾기·추천, 관심 목록, 지역·요일·관심 분야·희망 전공 저장 → recommend_agent / 남은 시간·기록·프로필·확인서 → record_agent /
-마감·캘린더·보고서·포트폴리오 → report_agent /
-규정 근거 → policy_agent / 계획 → planner_agent). 하위 Agent가 '내 담당이 아니다'라고 했다면 그 부분은 아직 처리되지 않은 것이다.
-모두 처리됐으면 아무것도 쓰지 말고 끝내라(Agent를 여럿 거쳤으면 실제 결과만 정리한다).
-이 메모나 너의 판단 과정('요청을 다시 분석하면' 등)을 답에 쓰지 않는다."""
-
-
 def supervisor_prompt(state: dict) -> list:
-    """Supervisor 입력. 하위 Agent가 돌아온 직후에는 '남은 일' 점검 메모를 붙인다.
-
-    Supervisor가 첫 Agent의 답만 보고 끝내 두 번째 Agent(예: recommend_agent)로 넘기지 않는 일이 반복돼
-    (시나리오 S3-1, S7-1, S8-4) 원래 요청과 지금까지 거친 Agent를 그 자리에서 다시 보여 준다. 대화 상태에는 저장하지 않는다."""
-    messages = list(state["messages"])
-    view = [SystemMessage(SUPERVISOR_PROMPT), *messages]
-    last = messages[-1] if messages else None
-    if isinstance(last, ToolMessage) and (last.name or "").startswith("transfer_back_to_"):
-        start = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=0)
-        done = []
-        for m in messages[start:]:
-            for c in getattr(m, "tool_calls", None) or []:
-                agent = c["name"].removeprefix("transfer_to_")
-                if c["name"].startswith("transfer_to_") and agent not in done:
-                    done.append(agent)
-        request = get_text(messages[start]) if messages and isinstance(messages[start], HumanMessage) else ""
-        view.append(HumanMessage(PROGRESS_NOTE.format(request=request, done=", ".join(done) or "없음")))
-    return view
+    """Supervisor 입력. LLM은 턴 시작에만 불리므로(agent.RouteFirstChat) 시스템 프롬프트와 대화만 준다."""
+    return [SystemMessage(SUPERVISOR_PROMPT), *state["messages"]]
 
 
 def build_agents(llm_for: Callable[[str], Any], tools: list[Any], today_fn: Callable[[], date]) -> list[Any]:

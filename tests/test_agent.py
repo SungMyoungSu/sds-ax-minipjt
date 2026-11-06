@@ -301,24 +301,75 @@ def test_agent_view_drops_all_supervisor_text():
     assert [m.content for m in agent_view(history)] == ["기록해줘", "기록했습니다", "추천해줘"]
 
 
-def test_supervisor_prompt_adds_progress_note_only_after_agent_returns():
+def test_supervisor_prompt_is_system_plus_history():
     from agents import supervisor_prompt
 
     req = HumanMessage(content="남은 봉사 시간에 맞는 걸로 추천해줘")
-    first = supervisor_prompt({"messages": [req]})
-    assert isinstance(first[0], SystemMessage) and first[-1] is req  # 턴 시작에는 메모 없음(강제는 모델 옵션으로)
-    history = [req,
-               AIMessage(content="", tool_calls=[{"name": "transfer_to_record_agent", "args": {}, "id": "h1"}],
-                         name="supervisor"),
-               ToolMessage(content="ok", tool_call_id="h1", name="transfer_to_record_agent"),
-               AIMessage(content="남은 시간 10시간", name="record_agent",
-                         tool_calls=[{"name": "transfer_back_to_supervisor", "args": {}, "id": "b1"}]),
-               ToolMessage(content="back", tool_call_id="b1", name="transfer_back_to_supervisor")]
-    view = supervisor_prompt({"messages": history})
-    note = view[-1]
-    assert isinstance(note, HumanMessage) and "진행 점검" in note.content
-    assert '"남은 봉사 시간에 맞는 걸로 추천해줘"' in note.content and "맡긴 Agent: record_agent" in note.content
-    assert len(view) == len(history) + 2  # 상태에는 저장하지 않고 입력에만 붙임
+    view = supervisor_prompt({"messages": [req]})
+    assert isinstance(view[0], SystemMessage) and view[1:] == [req]
+
+
+def plan_supervisor(plan):
+    """route_plan 도구로 계획을 내는 가짜 Supervisor LLM."""
+    def handler(messages):
+        return AIMessage(content="", tool_calls=[{"name": "route_plan", "args": {"agents": plan}, "id": "rp1"}])
+    return handler
+
+
+def answering(name):
+    return lambda messages: AIMessage(content=f"{name} 답")
+
+
+def test_route_plan_runs_agents_in_order_with_one_supervisor_llm_call(settings):
+    """턴 시작에 Supervisor LLM을 한 번만 불러 계획을 받고, 이후 Agent 이동과 종료는 코드가 한다."""
+    sup = ScriptedChat(handler=plan_supervisor(["record_agent", "recommend_agent"]), seen=[])
+    models = {r: ScriptedChat(handler=answering(r), seen=[]) for r in AGENT_TOOLS}
+    models["supervisor"] = sup
+    app = compile_app(lambda r: models[r], StubTools().mcp(), AppClock.create(settings, date(2026, 11, 4)),
+                      store=InMemoryStore())
+    t = asyncio.run(ask(app, "남은 봉사 시간에 맞는 걸로 추천해줘", "t-plan"))
+    assert t.agents == ["record_agent", "recommend_agent"]
+    assert t.answer == "record_agent 답\n\nrecommend_agent 답"
+    assert len(sup.seen) == 1  # 재배분·마무리에 LLM을 부르지 않음
+    # 다음 턴에는 새 계획을 받는다(이전 턴 계획을 이어 쓰지 않음)
+    sup.handler = plan_supervisor(["general_agent"])
+    t2 = asyncio.run(ask(app, "고마워", "t-plan"))
+    assert t2.agents == ["general_agent"] and len(sup.seen) == 2
+
+
+def test_route_plan_filters_unknown_dedupes_and_caps():
+    from agent import MAX_ROUTE, RouteFirstChat
+
+    chat = RouteFirstChat(inner=ScriptedChat(handler=general_handler, seen=[]))
+    agents = ["policy_agent", "record_agent", "report_agent", "recommend_agent", "general_agent"]
+    resp = AIMessage(content="", tool_calls=[{"name": "route_plan", "id": "x", "args": {
+        "agents": ["record_agent", "hacker_agent", "record_agent", "report_agent", "recommend_agent", "policy_agent"]}}])
+    assert chat._plan_from(resp, agents) == ["record_agent", "report_agent", "recommend_agent"][:MAX_ROUTE]
+    # 계획 없이 transfer_to_*를 바로 부르면 그것을 계획으로, 아무것도 없으면 general_agent
+    direct = AIMessage(content="", tool_calls=[{"name": "transfer_to_policy_agent", "id": "y", "args": {}}])
+    assert chat._plan_from(direct, agents) == ["policy_agent"]
+    assert chat._plan_from(AIMessage(content="직접 답"), agents) == ["general_agent"]
+
+
+def test_route_next_step_without_llm():
+    """Agent가 돌아온 뒤: 계획의 다음 Agent, 다 거쳤으면 빈 응답. 이전 턴의 계획은 보지 않는다."""
+    from agent import RouteFirstChat
+
+    chat = RouteFirstChat(inner=ScriptedChat(handler=general_handler, seen=[]))
+    first = chat._handoff("record_agent", ["record_agent", "recommend_agent"])
+    back = [AIMessage(content="남은 10시간", name="record_agent",
+                      tool_calls=[{"name": "transfer_back_to_supervisor", "args": {}, "id": "b1"}]),
+            ToolMessage(content="back", tool_call_id="b1", name="transfer_back_to_supervisor")]
+    history = [HumanMessage(content="남은 시간 맞춰 추천해줘"), first,
+               ToolMessage(content="ok", tool_call_id=first.tool_calls[0]["id"], name="transfer_to_record_agent"), *back]
+    nxt = chat._next(history)
+    assert [c["name"] for c in nxt.tool_calls] == ["transfer_to_recommend_agent"]
+    done = history + [nxt, ToolMessage(content="ok", tool_call_id=nxt.tool_calls[0]["id"],
+                                       name="transfer_to_recommend_agent"), *back]
+    end = chat._next(done)
+    assert end.tool_calls == [] and end.content == ""
+    # 새 사용자 발화 뒤에는 이전 계획이 남아 있어도 이어서 넘기지 않는다
+    assert chat._next(history + [HumanMessage(content="다른 질문"), *back]).tool_calls == []
 
 
 def test_single_agent_answer_wins_over_supervisor_text(settings):
@@ -361,7 +412,7 @@ class ChoiceRecorder(ScriptedChat):
 
 
 def test_route_first_forces_handoff_only_at_turn_start(settings):
-    """턴 시작에는 tool_choice='any'로 이동 도구를 강제하고, Agent가 돌아온 뒤에는 강제하지 않는다(S2-4 회귀)."""
+    """턴 시작에는 tool_choice='any'로 계획을 강제하고(S2-4 회귀), Agent가 돌아온 뒤에는 LLM을 부르지 않는다."""
     sup = ChoiceRecorder(handler=supervisor_handler, seen=[], choices=[])
     models = {r: ScriptedChat(handler=general_handler, seen=[]) for r in AGENT_TOOLS}
     models["supervisor"] = sup
@@ -369,7 +420,7 @@ def test_route_first_forces_handoff_only_at_turn_start(settings):
                       store=InMemoryStore())
     t = asyncio.run(ask(app, "안녕", "t-route"))
     assert t.agents == ["general_agent"]
-    assert sup.choices == ["any", None]  # 첫 호출만 강제
+    assert sup.choices == ["any"]  # 턴 시작 한 번만 LLM(강제), 마무리는 코드가 함
 
 
 def test_first_tool_chat_forces_until_own_tool_result():
@@ -443,10 +494,10 @@ def test_record_and_report_agents_split_the_old_record_tools():
 
 
 def test_supervisor_prompt_routes_reports_to_report_agent():
-    from agents import PROGRESS_NOTE, SUPERVISOR_PROMPT
+    from agents import SUPERVISOR_PROMPT
 
     report_line = next(l for l in SUPERVISOR_PROMPT.splitlines() if l.rstrip().endswith("→ report_agent"))
     assert "보고서" in report_line and "캘린더" in report_line and "마감" in report_line
     record_line = next(l for l in SUPERVISOR_PROMPT.splitlines() if l.rstrip().endswith("→ record_agent"))
     assert "보고서" not in record_line and "남은 시간" in record_line
-    assert "report_agent" in PROGRESS_NOTE
+    assert "[record_agent, report_agent]" in SUPERVISOR_PROMPT  # 기록+보고서 복합 요청 예시
