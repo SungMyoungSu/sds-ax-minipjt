@@ -77,7 +77,12 @@ def _usage(response: Any) -> dict[str, Any]:
     except (AttributeError, IndexError):
         return {}
     usage = getattr(message, "usage_metadata", None) or {}
-    return {k: usage[k] for k in ("input_tokens", "output_tokens", "total_tokens") if k in usage}
+    out = {k: usage[k] for k in ("input_tokens", "output_tokens", "total_tokens") if k in usage}
+    details = usage.get("input_token_details") or {}
+    for key in ("cache_read", "cache_creation"):  # 프롬프트 캐싱 효과 확인용(input_tokens에 포함된 값)
+        if details.get(key):
+            out[key] = details[key]
+    return out
 
 
 def _output(response: Any) -> str:

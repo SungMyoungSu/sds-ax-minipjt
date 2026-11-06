@@ -137,7 +137,7 @@ async def open_app(settings: Settings, clock: AppClock, *, llm_for: Callable[[st
 
     if llm_for is None:
         def llm_for(_role: str):
-            return make_llm(settings)
+            return make_llm(settings, cache=True)
     client = MultiServerMCPClient({"volunteer": mcp_server_config(settings, clock, api_mode, fixtures)})
     store = open_store(settings)
     try:
@@ -152,7 +152,7 @@ async def build_app(settings: Settings, clock: AppClock, **kwargs: Any):
     """세션을 매번 여는 단순 버전(도구 호출마다 MCP 서버를 띄움). 오래 쓰는 화면은 open_app을 쓴다."""
     from langchain_mcp_adapters.client import MultiServerMCPClient
 
-    llm_for = kwargs.pop("llm_for", None) or (lambda _role: make_llm(settings))
+    llm_for = kwargs.pop("llm_for", None) or (lambda _role: make_llm(settings, cache=True))
     client = MultiServerMCPClient({"volunteer": mcp_server_config(settings, clock, kwargs.pop("api_mode", "live"),
                                                                   kwargs.pop("fixtures", None))})
     tools = await client.get_tools()

@@ -59,6 +59,7 @@ class Settings:
     llm_model: str | None = None
     judge_model: str | None = None
     embedding_model: str | None = None
+    prompt_cache: bool = True  # Bedrock 프롬프트 캐싱(에이전트 호출만). PROMPT_CACHE=off로 끈다
     anthropic_api_key: str | None = _secret()
     anthropic_model: str | None = None
     https_proxy: str | None = _secret()  # 프록시 URL에 계정 정보가 들어갈 수 있음
@@ -121,6 +122,17 @@ def _to_float(name: str, value: str | None, default: float) -> float:
     return number
 
 
+def _to_switch(name: str, value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    lowered = value.lower()
+    if lowered in ("on", "true", "1", "yes"):
+        return True
+    if lowered in ("off", "false", "0", "no"):
+        return False
+    raise ConfigError(f"{name}는 on 또는 off여야 합니다.")
+
+
 def _to_int(name: str, value: str | None) -> int | None:
     if value is None:
         return None
@@ -169,6 +181,7 @@ def load_settings(
         llm_model=get("LLM_MODEL"),
         judge_model=get("JUDGE_MODEL"),
         embedding_model=get("EMBEDDING_MODEL"),
+        prompt_cache=_to_switch("PROMPT_CACHE", get("PROMPT_CACHE"), default=True),
         anthropic_api_key=get("ANTHROPIC_API_KEY"),
         anthropic_model=get("ANTHROPIC_MODEL"),
         https_proxy=get("HTTPS_PROXY"),

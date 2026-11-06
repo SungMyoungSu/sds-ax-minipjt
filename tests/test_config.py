@@ -64,6 +64,12 @@ def test_ensure_data_dir_creates_folder(data_dir):
     assert data_dir.is_dir()
 
 
+@pytest.mark.parametrize("value, expected", [(None, True), ("on", True), ("OFF", False), ("false", False), ("1", True)])
+def test_prompt_cache_switch(value, expected):
+    environ = {} if value is None else {"PROMPT_CACHE": value}
+    assert load_settings(env_file=None, environ=environ).prompt_cache is expected
+
+
 def test_tz_property():
     assert load_settings(env_file=None).tz.key == "Asia/Seoul"
 
@@ -76,6 +82,7 @@ def test_tz_property():
         ({"SMTP_PORT": "smtp"}, "SMTP_PORT"),
         ({"APP_TIMEZONE": "Mars/Base"}, "APP_TIMEZONE"),
         ({"LLM_PROVIDER": "openai"}, "LLM_PROVIDER"),
+        ({"PROMPT_CACHE": "maybe"}, "PROMPT_CACHE"),
     ],
 )
 def test_invalid_values_raise_config_error(environ, name):
