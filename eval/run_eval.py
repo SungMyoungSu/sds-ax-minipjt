@@ -1,4 +1,4 @@
-"""인-아웃 평가 12건 (`uv run python eval/run_eval.py`). 판정 로직은 inout_eval.
+"""인-아웃 평가 13건 (`uv run python eval/run_eval.py`). 판정 로직은 inout_eval.
 
 규칙이 확정된 회사원 상태(임시 DATA_DIR)에서 문항마다 새 대화로 묻고, 입력 가드레일을 앞단에 둔다.
 결과는 eval/eval_result.json, 문항별 trace는 DATA_DIR/eval_runs/에 남긴다. 하나라도 실패하면 종료 코드 1, Bedrock 사용 한도로 중단되면 3.

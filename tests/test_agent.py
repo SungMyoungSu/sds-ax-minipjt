@@ -112,6 +112,7 @@ def fake_app(settings):
         "supervisor": ScriptedChat(handler=supervisor_handler, seen=[]),
         "policy_agent": ScriptedChat(handler=policy_handler, seen=[]),
         "record_agent": ScriptedChat(handler=general_handler, seen=[]),
+        "report_agent": ScriptedChat(handler=general_handler, seen=[]),
         "recommend_agent": ScriptedChat(handler=general_handler, seen=[]),
         "general_agent": ScriptedChat(handler=general_handler, seen=[]),
         "planner_agent": ScriptedChat(handler=general_handler, seen=[]),
@@ -394,7 +395,28 @@ def test_first_tool_chat_forces_until_own_tool_result():
 
 
 def test_force_first_tool_agents_exclude_record_agent():
-    """record_agent는 강제하지 않는다: 미래 날짜·날짜 누락은 도구 없이 안내하는 것이 정답(인-아웃 12·15번)."""
+    """record_agent는 강제하지 않는다: 미래 날짜·날짜 누락은 도구 없이 안내하는 것이 정답(인-아웃 12·15번).
+    report_agent는 마감·캘린더·보고서 모두 도구 결과가 필요하므로 강제한다."""
     from agents import FORCE_FIRST_TOOL
 
-    assert set(FORCE_FIRST_TOOL) == {"policy_agent", "recommend_agent"}
+    assert set(FORCE_FIRST_TOOL) == {"policy_agent", "recommend_agent", "report_agent"}
+
+
+def test_record_and_report_agents_split_the_old_record_tools():
+    """record_agent(기록·프로필·확인서·남은 시간)와 report_agent(마감·캘린더·보고서)의 경계.
+    get_progress만 함께 쓴다(보고서 전 '규칙 미확정' 확인)."""
+    record, report = set(AGENT_TOOLS["record_agent"]), set(AGENT_TOOLS["report_agent"])
+    assert record & report == {"get_progress"}
+    assert {"get_upcoming_deadlines", "export_ics", "generate_report"} <= report
+    assert not {"get_upcoming_deadlines", "export_ics", "generate_report"} & record
+    assert {"log_activity", "create_profile", "attach_certificate"} <= record and not report & {"log_activity"}
+
+
+def test_supervisor_prompt_routes_reports_to_report_agent():
+    from agents import PROGRESS_NOTE, SUPERVISOR_PROMPT
+
+    report_line = next(l for l in SUPERVISOR_PROMPT.splitlines() if l.rstrip().endswith("→ report_agent"))
+    assert "보고서" in report_line and "캘린더" in report_line and "마감" in report_line
+    record_line = next(l for l in SUPERVISOR_PROMPT.splitlines() if l.rstrip().endswith("→ record_agent"))
+    assert "보고서" not in record_line and "남은 시간" in record_line
+    assert "report_agent" in PROGRESS_NOTE

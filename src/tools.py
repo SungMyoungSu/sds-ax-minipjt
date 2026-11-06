@@ -288,7 +288,7 @@ def confirm_rules(confirmation_text: str, candidate_id: int | None = None, edits
     return result.message
 
 
-# ---- record_agent 도구 ----
+# ---- record_agent 도구 (get_progress는 report_agent·planner_agent와 함께 씀) ----
 
 @mcp.tool()
 @safe
@@ -501,6 +501,8 @@ def get_progress(output: str = "text") -> str:
                 lines.append(f"  - {_activity_line(acts[line.activity_id], store)}")
     return "\n".join(lines)
 
+
+# ---- report_agent 도구 (get_progress는 record_agent와 함께 씀) ----
 
 @mcp.tool()
 @safe

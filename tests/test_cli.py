@@ -23,7 +23,7 @@ class FakeRuntime:
     def __init__(self):
         self.models = {"supervisor": ScriptedChat(handler=supervisor_handler, seen=[]),
                        "policy_agent": ScriptedChat(handler=policy_handler, seen=[])}
-        for role in ("record_agent", "recommend_agent", "general_agent", "planner_agent"):
+        for role in ("record_agent", "report_agent", "recommend_agent", "general_agent", "planner_agent"):
             self.models[role] = ScriptedChat(handler=general_handler, seen=[])
         self.stubs = StubTools()
         self.opened = []

@@ -160,7 +160,7 @@ def test_audit_log_masks_secrets(settings):
 def test_ac9_blocked_input_never_reaches_supervisor(settings):
     sup = ScriptedChat(handler=general_handler, seen=[])
     models = {"supervisor": sup}
-    for role in ("policy_agent", "record_agent", "recommend_agent", "general_agent", "planner_agent"):
+    for role in ("policy_agent", "record_agent", "report_agent", "recommend_agent", "general_agent", "planner_agent"):
         models[role] = ScriptedChat(handler=general_handler, seen=[])
     app = compile_app(lambda r: models[r], StubTools().mcp(), AppClock.create(settings, date(2026, 11, 4)),
                       store=InMemoryStore())

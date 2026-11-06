@@ -58,5 +58,10 @@
     "question": "봉사 신청 절차가 어떻게 돼?",
     "expected_source": "통과",
     "type": "guardrail"
+  },
+  {
+    "question": "오늘 공원에서 2시간 환경정화 봉사한 거 기록하고 회사 보고서도 만들어줘",
+    "expected_source": "record_agent, report_agent",
+    "type": "multi_agent"
   }
 ]
