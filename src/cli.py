@@ -142,10 +142,10 @@ class Runtime:
 def default_runtime() -> Runtime:
     from agent import open_app
     from guards import InputGuard
-    from llm import has_llm_credentials, make_llm
+    from llm import has_llm_credentials, make_guard_llm
 
     def make_guard(settings: Settings):
-        return InputGuard(settings, make_llm(settings) if has_llm_credentials(settings) else None)
+        return InputGuard(settings, make_guard_llm(settings) if has_llm_credentials(settings) else None)
 
     def opener(settings: Settings, clock: Any, api_mode: str):
         return open_app(settings, clock, api_mode=api_mode)

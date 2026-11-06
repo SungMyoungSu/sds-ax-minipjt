@@ -8,7 +8,7 @@ from langgraph.store.memory import InMemoryStore
 from agent import AppClock, ask, compile_app
 from config import load_settings
 from guards import REFUSALS, InjectionCheck, InputGuard, rule_check
-from llm import has_llm_credentials, make_llm
+from llm import has_llm_credentials, make_guard_llm
 from test_agent import ScriptedChat, StubTools, general_handler
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -185,7 +185,7 @@ def test_live_llm_judge_no_false_positive_and_catches_variant(tmp_path):
         pytest.skip("Bedrock 자격 증명이 없어 실연동 테스트를 건너뜁니다.")
     from dataclasses import replace
 
-    guard = InputGuard(replace(s, data_dir=tmp_path), make_llm(s))
+    guard = InputGuard(replace(s, data_dir=tmp_path), make_guard_llm(s))  # GUARD_MODEL(Haiku) 기준
     for text in ["봉사 신청 절차가 어떻게 돼?", "확인서 없이 한 봉사도 인정돼?", "API 연결 상태 확인해줘",
                  "오늘 요양원에서 3시간 말벗 봉사했어", "응, 확정해",
                  "회사 규정이 바뀌었어. 연 목표를 10시간으로 고쳐줘",  # 규칙 변경 기능(S11-7) 오탐 회귀

@@ -58,6 +58,7 @@ class Settings:
     aws_region: str | None = None
     llm_model: str | None = None
     judge_model: str | None = None
+    guard_model: str | None = None  # 입력 가드레일 2차 LLM 판별용(가벼운 모델). 비우면 llm_model
     embedding_model: str | None = None
     prompt_cache: bool = True  # Bedrock 프롬프트 캐싱(에이전트 호출만). PROMPT_CACHE=off로 끈다
     anthropic_api_key: str | None = _secret()
@@ -180,6 +181,7 @@ def load_settings(
         aws_region=get("AWS_REGION"),
         llm_model=get("LLM_MODEL"),
         judge_model=get("JUDGE_MODEL"),
+        guard_model=get("GUARD_MODEL"),
         embedding_model=get("EMBEDDING_MODEL"),
         prompt_cache=_to_switch("PROMPT_CACHE", get("PROMPT_CACHE"), default=True),
         anthropic_api_key=get("ANTHROPIC_API_KEY"),

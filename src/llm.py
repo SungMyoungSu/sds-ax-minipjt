@@ -58,6 +58,14 @@ def make_llm(settings: Settings, model: str | None = None, *, cache: bool = Fals
     return cls(**kwargs)
 
 
+def make_guard_llm(settings: Settings):
+    """입력 가드레일 2차 판별 모델. GUARD_MODEL(예: Haiku)이 있으면 그것을, 없으면 LLM_MODEL을 쓴다.
+
+    가드레일은 매 턴 Supervisor보다 먼저 한 번씩 돌아 응답 시간에 그대로 더해지므로 가벼운 모델을 쓴다.
+    캐싱은 끈다(프롬프트 전체가 매번 다른 사용자 입력을 포함하고, Haiku 4.5의 최소 캐시 단위보다 짧다)."""
+    return make_llm(settings, settings.guard_model or settings.llm_model)
+
+
 def has_llm_credentials(settings: Settings) -> bool:
     return bool(settings.llm_model and settings.aws_access_key_id and settings.aws_secret_access_key)
 

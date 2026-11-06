@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 
 from config import load_settings
-from llm import make_llm
+from llm import make_guard_llm, make_llm
 from tracing import _usage
 
 pytest.importorskip("langchain_aws")
@@ -61,6 +61,15 @@ def test_agent_llm_puts_cache_points_on_system_tools_and_messages(settings):
     # 캐시 읽기 토큰이 usage에 들어오고 trace에도 남는다
     assert message.usage_metadata["input_token_details"]["cache_read"] == 1200
     assert _usage(LLMResult(generations=[[ChatGeneration(message=message)]]))["cache_read"] == 1200
+
+
+def test_guard_llm_uses_guard_model_without_cache(settings):
+    haiku = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    guard = make_guard_llm(replace(settings, guard_model=haiku))
+    assert guard.model_id == haiku
+    request, _ = ask(guard)
+    assert request["modelId"] == haiku and not cache_points(request["system"])
+    assert make_guard_llm(settings).model_id == settings.llm_model  # GUARD_MODEL이 비면 LLM_MODEL
 
 
 def test_cache_off_by_default_and_by_switch(settings):
