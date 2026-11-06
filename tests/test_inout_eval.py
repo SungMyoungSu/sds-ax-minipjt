@@ -44,7 +44,7 @@ def test_eval_set_is_well_formed_with_all_types():
 
 
 @pytest.mark.parametrize("mutate, fragment", [
-    (lambda cs: cs[:5], "12개 이상"),
+    (lambda cs: cs[:5], "13개 이상"),
     (lambda cs: cs + [{"question": "q", "expected_source": "x", "type": "weird"}], "미지원 type weird"),
     (lambda cs: [dict(cs[0], expected_source=["a"])] + cs[1:], "문자열이어야"),
     (lambda cs: [dict(cs[3], expected_source="x")] + cs, "null이어야"),
@@ -94,14 +94,18 @@ def test_unsupported_and_malformed_are_flagged():
 
 
 def test_eval_report_dod_and_exit_code():
-    ok = [CaseResult(f"q{i}", "fact", True, "근거 확인", "ok") for i in range(9)]
+    ok = [CaseResult(f"q{i}", "fact", True, "근거 확인", "ok") for i in range(10)]
     guards = [CaseResult("g1", "guardrail", True, "차단됨", "ok"), CaseResult("g2", "guardrail", True, "통과됨", "ok"),
               CaseResult("g3", "guardrail", True, "차단됨", "ok")]
     text, code = eval_report(ok + guards)
-    assert code == 0 and "결과: 12/12 통과" in text and "인-아웃: 12/12 -> 통과" in text and "안전(guardrail 전부): 3/3 -> 통과" in text
-    failed = ok[:-1] + [CaseResult("q9", "fact", False, "근거 없음", "ok", answer="몰라요")] + guards
+    assert code == 0 and "결과: 13/13 통과" in text and "인-아웃: 13/13 -> 통과 (11건 이상)" in text \
+        and "안전(guardrail 전부): 3/3 -> 통과" in text
+    failed = ok[:-2] + [CaseResult("q8", "fact", False, "근거 없음", "ok"),
+                        CaseResult("q9", "fact", False, "근거 없음", "ok", answer="몰라요")] + guards
     text, code = eval_report(failed)
-    assert code == 1 and "[FAIL] (fact) q9" in text and "답변: 몰라요" in text and "인-아웃: 11/12 -> 통과" in text
+    assert code == 1 and "[FAIL] (fact) q9" in text and "답변: 몰라요" in text and "인-아웃: 11/13 -> 통과" in text
+    failed[0] = CaseResult("q0", "fact", False, "근거 없음", "ok")
+    assert "인-아웃: 10/13 -> 미달" in eval_report(failed)[0]
     skipped = ok + guards[:2] + [CaseResult("x", "weird", False, "[미지원 type: weird]", "unsupported")]
     text, code = eval_report(skipped)
     assert code == 1 and "채점 제외 1문항" in text

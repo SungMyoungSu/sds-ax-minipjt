@@ -22,7 +22,7 @@ constraints:
 - 'LLM: AWS Bedrock ChatBedrockConverse, temperature=0. 접속 정보는 .env(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
   AWS_SESSION_TOKEN 선택, AWS_REGION, LLM_MODEL, JUDGE_MODEL)에서만 읽는다. 코드·로그·커밋에 키를 넣지 않는다. Claude Desktop은
   사용하지 않는다.'
-- '에이전트 구조: LangGraph Supervisor + 하위 Agent 5개. policy_agent(사내규정 수집·검색·규칙 후보), record_agent(프로필·활동·집계·마감·보고서),
+- '에이전트 구조: LangGraph Supervisor + 하위 Agent 6개. policy_agent(사내규정 수집·검색·규칙 후보), record_agent(프로필·활동·확인서·남은 시간), report_agent(마감·캘린더·보고서),
   recommend_agent(공공 API 추천·관심 목록·선호 기억), planner_agent(봉사 계획, Plan-and-Execute), general_agent(인사·안내, 도구 없음). 하위 Agent의
   업무 도구는 로컬 fastmcp stdio MCP 서버가 제공하고, 장기 기억 도구(save_preference, get_preferences)만 LangGraph Store를 쓰는 Python 도구로 둔다. 모든 Agent는
   Python 코드로 정의한다(reference/final_scenario.py 방식).'
@@ -49,7 +49,7 @@ constraints:
 - '사내규정 입력은 .md 또는 텍스트 PDF만(DOCX·HWP·OCR 미지원). 조항 단위 분할 + 하이브리드 검색(BM25 + 임베딩). 추출 규칙은 confirm_rules로 확정하기 전에는
   계산·알림에 쓰지 않는다. confirm_rules는 사용자의 명시적 확인 발화가 있을 때만 호출한다.'
 - '추천 데이터: data.go.kr 1365 봉사참여정보 API(15157582, 목록 오퍼레이션 getVltrSearchWordList), DATA_GO_KR_KEY. 요청 타임아웃 10초.
-  신청 대행 없음, 원문 링크만. 학생의 청소년 참여 가능 여부는 1365 응답의 yngbgsPosblAt로 판별한다.
+  신청 대행 없음, 원문 링크만. 학생의 청소년 참여 가능 여부는 1365 응답의 yngbgsPosblAt로 판별한다.'
 - '알림: 안내 대상 마감은 (1) 관심 목록 봉사의 모집 마감일, (2) 목표가 있고 미달인 기준 기간 종료일 두 가지뿐이다(예정 활동 일정, 확인서 대기 독촉은 안내하지
   않음). .ics(D-30/D-7/D-1 VALARM). SMTP가 설정되어 있으면 Windows 작업 스케줄러가 하루 1회 점검해 사용자 본인 계정으로 자동 발송(처음 설정할 때 알림 수신 동의,
   발송 성공 후에만 발송 기록). SMTP가 없으면 발송하지 않고 메일 내용(제목, 본문, .ics 첨부)을 DATA_DIR에 .eml로 저장하고 화면에 요약을 출력한다.'
@@ -143,9 +143,9 @@ acceptance_criteria:
     LLM은 mock).'
 - description: 'AC10 관측: 한 번의 질의 실행 후 trace.jsonl에 llm_start/llm_end/tool_start/tool_end 이벤트가 도구 이름·지연시간과 함께 기록된다
     (pytest, LLM은 mock).'
-- description: 'AC11 누적 평가셋: eval/eval_set.json에 12문항 이상이 {question, expected_source, type} 형식으로 있고 type은 fact, paraphrase,
+- description: 'AC11 누적 평가셋: eval/eval_set.json에 13문항 이상이 {question, expected_source, type} 형식으로 있고 type은 fact, paraphrase,
     no_answer, no_tool, single_tool, multi_tool, multi_agent, guardrail(차단과 통과 각 1개 이상)을 모두 포함한다. eval/run_eval.py는
-    malformed·unsupported 0건으로 채점하며, Bedrock 자격 증명이 있을 때 실행하면 전체 10/12 이상 통과하고 guardrail 문항은 전부 통과한다.
+    malformed·unsupported 0건으로 채점하며, Bedrock 자격 증명이 있을 때 실행하면 전체 11/13 이상 통과하고 guardrail 문항은 전부 통과한다.
     자격 증명이 없으면 실행을 건너뛰고 이유를 출력한다.'
 - description: 'AC12 사용 화면: `volunteer-agent --once "어떤 일을 도와줄 수 있어?"`가 답을 출력하고 종료하며, `volunteer-agent chat`에 입력 두 줄과 종료
     명령을 표준 입력으로 넣으면 두 번째 답이 첫 번째 대화를 이어받는다. `--show-trace`는 답변마다 Agent와 도구를 표시하고, `--user-type`과 `--today`는 첫 실행
@@ -255,11 +255,11 @@ exit_conditions:
 - name: all_acceptance_criteria_met
   description: 모든 수용 기준 통과
   criteria: 프로젝트 루트에서 `uv run pytest`가 통과하고(라이브·Bedrock 의존 테스트는 자격 증명이 없으면 skip 허용), 자격 증명이 있으면 두 조건을 모두
-    충족한다. (1) `volunteer-agent scenario eval/scenarios/`의 모든 단계 통과(AC16), (2) eval/run_eval.py 인-아웃 12건 중 10건 이상 통과, guardrail 전부
+    충족한다. (1) `volunteer-agent scenario eval/scenarios/`의 모든 단계 통과(AC16), (2) eval/run_eval.py 인-아웃 13건 중 11건 이상 통과, guardrail 전부
     통과(AC11).
 metadata:
   seed_id: seed_volunteer_agent_v2
-  version: 2.5.1
+  version: 2.5.2
   created_at: '2026-11-04T05:00:00Z'
   ambiguity_score: 0.2
   interview_id: interview_20261104_021828
@@ -269,4 +269,4 @@ metadata:
     v1 QA 지적(빈 ontology, AC 중복, AC15) 반영. 2.1.0: SCENARIO.md 점검으로 대화 상태, 사용자 모델, 기록 수명주기, 데이터 관리 추가(AC13~AC15). 2.2.0: 평가가 CLI 시나리오 절차별 통과로 바뀌어 CLI 대화형·시나리오 실행기·공통 옵션 추가(AC12 보강, AC16), 성공 기준은 시나리오
     전 단계 통과와 인-아웃 10/12를 모두 필수로. 2.3.0: reference 기술을 모두 v1에 반영(벡터 RAG 하이브리드, LangGraph Store 장기 기억, Plan-and-Execute
     planner_agent, 구조화 출력, LLM 심사, 통합 점검), Agent 5개, AC17~AC20. 2.4.0: PM 인터뷰(interview_20261104_062901) PRD 반영 - 거절 5범주 고정 문구와
-    우선순위·전체 거절, 사용자 유형 전환, 규칙 미확정·변경 흐름, 기록 입력 검증, 추천·계획·알림·보고서 규칙, SMTP 없을 때 .eml 저장(AC21~AC25). 2.4.1: 미결 10개 확정, 전환·미확정 시나리오(transition) 추가, 규칙 변경도 명시적 확정 후 반영, 인-아웃 7번을 신청 대행 가드레일로 교체, PRD 경로 정리. 2.5.0: 사용자 유형 전환 기능 삭제(AC24 결번, switch_user_type·select_records_for_company 도구와 recorded_as·include_in_company 필드 제거, 미결 결정 8개로 정리, transition 시나리오를 규칙 미확정·변경 시나리오 unconfirmed로 교체, 58단계). 2.5.1: 청소년 공공 API(15156325)는 2026-11-05 확인 결과 지난 운영 이력만 주고 날짜·상태로 거를 수 없어 범위에서 뺐다(학생 필터는 1365 yngbgsPosblAt), 1365 목록 오퍼레이션과 분야 코드표를 실제 응답으로 확인'
+    우선순위·전체 거절, 사용자 유형 전환, 규칙 미확정·변경 흐름, 기록 입력 검증, 추천·계획·알림·보고서 규칙, SMTP 없을 때 .eml 저장(AC21~AC25). 2.4.1: 미결 10개 확정, 전환·미확정 시나리오(transition) 추가, 규칙 변경도 명시적 확정 후 반영, 인-아웃 7번을 신청 대행 가드레일로 교체, PRD 경로 정리. 2.5.0: 사용자 유형 전환 기능 삭제(AC24 결번, switch_user_type·select_records_for_company 도구와 recorded_as·include_in_company 필드 제거, 미결 결정 8개로 정리, transition 시나리오를 규칙 미확정·변경 시나리오 unconfirmed로 교체, 58단계). 2.5.1: 청소년 공공 API(15156325)는 2026-11-05 확인 결과 지난 운영 이력만 주고 날짜·상태로 거를 수 없어 범위에서 뺐다(학생 필터는 1365 yngbgsPosblAt), 1365 목록 오퍼레이션과 분야 코드표를 실제 응답으로 확인. 2.5.2: record_agent(도구 10개)를 record_agent(프로필·기록·확인서·남은 시간)와 report_agent(마감·캘린더·보고서, get_progress 공유)로 분리해 하위 Agent 6개, 인-아웃 13번(record_agent → report_agent) 추가로 기준을 13건 중 11건으로'

@@ -27,7 +27,7 @@
 
 ## 아키텍처 불변 규칙
 ```
-입력 가드레일 → Supervisor(checkpointer) → policy_agent / record_agent / recommend_agent / planner_agent / general_agent
+입력 가드레일 → Supervisor(checkpointer) → policy_agent / record_agent / report_agent / recommend_agent / planner_agent / general_agent
   → 로컬 MCP 서버 → SQLite·Chroma·DATA_DIR·data.go.kr·SMTP     (장기 기억: LangGraph Store)
 ```
 - **에이전트는 Python 코드로 정의합니다** (`reference/final_scenario.py` 방식). 역할 프롬프트, 담당 도구 목록, Supervisor 배분 기준은 코드에 두고, 그 코드가 유일한 기준(source of truth)입니다. 에이전트 정의를 별도 Markdown 문서로 두지 않습니다.
@@ -36,7 +36,8 @@
 | Agent | 역할 | 도구 |
 |---|---|---|
 | policy_agent | 사내규정 수집, 검색, 규칙 후보 생성과 확정 | `ingest_policy`, `search_policy`, `propose_rules`, `confirm_rules` |
-| record_agent | 프로필, 활동, 집계, 마감, 보고서 | `create_profile`, `list_profiles`, `log_activity`, `update_activity`, `delete_activity`, `attach_certificate`, `get_progress`, `get_upcoming_deadlines`, `export_ics`, `generate_report` |
+| record_agent | 프로필, 활동 기록·수정·삭제, 확인서, 남은 시간 | `create_profile`, `list_profiles`, `log_activity`, `update_activity`, `delete_activity`, `attach_certificate`, `get_progress` |
+| report_agent | 마감 일정, 캘린더(.ics), 회사 보고서·학생 포트폴리오 PDF | `get_progress`(보고서 전 규칙 확정 확인), `get_upcoming_deadlines`, `export_ics`, `generate_report` |
 | recommend_agent | 공공 API 추천, 관심 목록, 선호 기억 | `search_volunteer`, `save_to_watchlist`, `remove_from_watchlist`, `save_preference`, `get_preferences` |
 | planner_agent | 봉사 계획 (Plan-and-Execute 그래프) | 실행 단계에서 `get_progress`, `get_upcoming_deadlines`, `get_preferences`, `search_volunteer`, 승인 시 `approve_plan` |
 | general_agent | 인사, 기능 안내 | 도구 없음 |
@@ -81,7 +82,7 @@
 uv sync                                   # 의존성 설치
 uv run pytest                             # 단위 테스트 (Bedrock·라이브 API 테스트는 키가 없으면 skip)
 uv run volunteer-agent scenario eval/scenarios/   # CLI 시나리오 절차별 평가 (주 평가, Bedrock 키 필요)
-uv run python eval/run_eval.py            # 12건 인-아웃 평가 (.env의 Bedrock 키 필요)
+uv run python eval/run_eval.py            # 13건 인-아웃 평가 (.env의 Bedrock 키 필요)
 uv run python eval/llm_judge.py           # LLM 심사 6문항 (평균 4점 이상)
 uv run volunteer-agent check              # 통합 점검 (복합 질문 + 주입 + 정상 질문)
 uv run volunteer-agent chat --show-trace  # 대화형 CLI (주 화면)
@@ -95,7 +96,7 @@ uv run python evaluation/run_round.py --round N   # 인-아웃 세트 자체 평
 
 ## 완료 기준 (DoD)
 - **평가는 CLI에서 실행합니다.** 아래 기능 조건 두 가지를 모두 만족해야 합니다.
-- 기능: (1) CLI 시나리오 4개(`eval/scenarios/`)의 모든 단계 통과, (2) 인-아웃 12건 중 10건 이상 통과, 그리고 `uv run pytest` 통과
+- 기능: (1) CLI 시나리오 4개(`eval/scenarios/`)의 모든 단계 통과, (2) 인-아웃 13건 중 11건 이상 통과, 그리고 `uv run pytest` 통과
 - 시나리오 단계(`eval/scenarios/*.yaml`)는 평가 기준이므로, 테스트를 통과시키려고 기대값을 느슨하게 고치지 않습니다. 바꿔야 하면 사용자와 먼저 합의합니다.
 - 안전: guardrail 문항 전부 통과, 비밀 정보 노출 0건
 - 관측: 평가를 실행하면 `trace.jsonl`에 문항별 도구 호출과 지연시간이 남음

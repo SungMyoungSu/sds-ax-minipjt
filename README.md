@@ -8,10 +8,10 @@
 |---|---|---|
 | Day 1 | LLM 호출과 구조화 출력 | `ChatBedrockConverse`(temperature 0) + Pydantic `with_structured_output`: 가드레일 판별(`InjectionCheck`), 계획(`Plan`·`Replan`), 규칙 후보(`RuleDraft`) |
 | Day 2 | RAG와 평가셋 | 사내규정을 조항 단위로 나눠 **BM25 + Titan 임베딩 + Chroma 하이브리드(RRF)** 검색, 근거 없으면 고정 문구. 평가셋의 fact/paraphrase/no_answer 문항 |
-| Day 3 | 도구 호출 Agent(ReAct) | 하위 Agent 4개를 `create_react_agent`로, 각자 자기 도구만 바인딩 |
+| Day 3 | 도구 호출 Agent(ReAct) | 하위 Agent 5개를 `create_react_agent`로, 각자 자기 도구만 바인딩 |
 | Day 4 | MCP 서버 | fastmcp stdio 서버에 업무 도구 18개(결정적 코드, 채팅 LLM 호출 없음). 모든 도구 docstring에 "쓰는 경우/쓰지 않는 경우" |
 | Day 5 | 입력 가드레일·고정 거절 | 1차 정규식 → 2차 LLM 판별(확신도 > 0.7). 거절 5범주 고정 문구, 섞인 요청 전체 거절, `guard_audit.log` |
-| Day 6 | Supervisor 다중 에이전트 | `create_supervisor` + policy/record/recommend/planner/general Agent, checkpointer로 대화 이어받기 |
+| Day 6 | Supervisor 다중 에이전트 | `create_supervisor` + policy/record/report/recommend/planner/general Agent, checkpointer로 대화 이어받기 |
 | Day 7 | Plan-and-Execute·장기 기억·추적·평가 | planner_agent(planner → execute → replan → finalize, 승인 전 저장 안 함), LangGraph Store 선호 기억, `trace.jsonl`(FileTracer), LLM 심사·인-아웃 평가·통합 점검 |
 
 ## 아키텍처
@@ -23,7 +23,8 @@
                          │ 통과
    Supervisor (Bedrock Claude, checkpointer=대화 기억, 턴 시작엔 반드시 담당 Agent로 넘김)
      ├ policy_agent    사내규정 등록·검색(하이브리드 RAG)·규칙 후보·확정
-     ├ record_agent    프로필·활동 기록·확인서·집계·마감·캘린더·보고서
+     ├ record_agent    프로필·활동 기록·수정·삭제·확인서·남은 시간
+     ├ report_agent    마감 일정·캘린더(.ics)·회사 보고서·학생 포트폴리오 PDF
      ├ recommend_agent 1365 공공 API 추천(시도·시군구 필터)·관심 목록·선호 기억(Store)
      ├ planner_agent   Plan-and-Execute 봉사 계획(승인 시에만 저장)
      └ general_agent   인사·기능 안내
@@ -88,18 +89,18 @@ uv run volunteer-agent export | purge      # 데이터 백업 / 삭제(확인 �
 - 평가 실행기가 Bedrock 사용 한도(ThrottlingException)를 만나면 남은 문항을 돌리지 않고 종료 코드 3으로 멈춤.
 
 **남은 한계 · 향후 개선**
-- **속도:** 질문 한 번에 LLM을 4~6번 차례로 부른다(측정 예: 13.6초). 가드레일 판별을 가벼운 모델(Haiku)로, Bedrock 프롬프트 캐싱, record_agent(도구 10개) 분리를 검토 중.
+- **속도:** 질문 한 번에 LLM을 4~6번 차례로 부른다(측정 예: 13.6초). 가드레일 판별을 가벼운 모델(Haiku)로, Bedrock 프롬프트 캐싱을 검토 중. 도구가 10개로 몰렸던 record_agent는 record_agent(7개)와 report_agent(4개)로 나눴다.
 - 규정의 "1일 최대 8시간"은 답변으로만 안내하고 기록 시 자동으로 자르지 않는다.
 - 시군구 코드표는 서울만 검증. 다른 시도는 장소·기관 이름으로 거른다.
 - 학생 시나리오는 최근 수정 후 재확인하지 않았다(마지막 11/13).
 
 ## 핵심 코드 위치
 - `src/agent.py:131` — 메인 에이전트 그래프 `compile_app`(Supervisor + 하위 Agent 조립), `:89` `RouteFirstChat`, `:213` `ask`(가드레일 → Supervisor → 답 조립)
-- `src/agents.py:18` — Agent별 도구 경계(`AGENT_TOOLS`), `:108` Supervisor 배분 기준, `:208` `build_agents`
+- `src/agents.py:19` — Agent별 도구 경계(`AGENT_TOOLS`), `:174` Supervisor 배분 기준, `:278` `build_agents`
 - `src/tools.py:56` — 도메인 도구 18개(fastmcp MCP 서버)
 - `src/retriever.py:68` — RAG 파이프라인(BM25 + Titan + Chroma 하이브리드), `src/policy.py:77` 조항 분할
 - `src/planner.py:179` — Plan-and-Execute 그래프(planner_agent)
 - `src/guards.py:130` — 입력 가드레일(정규식 → LLM 판별)
 - `src/recommend.py:465` — 1365 추천(`:355` 시도·시군구 해석)
 - `src/memory.py:83` — 장기 기억(선호) 도구, `src/tracing.py:94` 실행 추적
-- `src/round_eval.py`, `evaluation/run_round.py` — 인-아웃 세트 라운드 평가(LLM 심사 + RAGAS 지표), `src/scenario.py`, `src/inout_eval.py` — 시나리오·인-아웃 12건·통합 점검
+- `src/round_eval.py`, `evaluation/run_round.py` — 인-아웃 세트 라운드 평가(LLM 심사 + RAGAS 지표), `src/scenario.py`, `src/inout_eval.py` — 시나리오·인-아웃 13건·통합 점검
