@@ -78,14 +78,20 @@ class ForcedToolChat(BaseChatModel):
 
 
 class FirstToolChat(ForcedToolChat):
-    """하위 Agent 모델 감싸개. 마지막 사용자 발화 뒤에 자기 도구 결과(ToolMessage)가 하나도 없으면 도구를 강제한다.
-    앞 Agent(예: record_agent의 get_progress) 결과는 세지 않으므로 두 번째로 넘겨받은 Agent도 강제된다."""
+    """하위 Agent 모델 감싸개. 마지막 사용자 발화 뒤에 이 Agent가 직접 부른 도구의 결과가 하나도 없으면 도구를 강제한다.
 
-    own_tools: frozenset[str]
+    도구 이름이 아니라 호출 주체로 센다. get_progress처럼 여러 Agent가 함께 쓰는 도구가 있어서, 이름으로 세면
+    record_agent의 get_progress 결과를 report_agent가 자기 결과로 착각해 강제가 꺼진다(인-아웃 13번에서 확인).
+    create_react_agent가 Agent의 AIMessage에 name을 붙이므로, 그 tool_calls id와 짝이 맞는 ToolMessage만 센다."""
+
+    agent_name: str
 
     def _force(self, messages: list[Any]) -> bool:
         start = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1)
-        return not any(isinstance(m, ToolMessage) and m.name in self.own_tools for m in messages[start + 1:])
+        turn = messages[start + 1:]
+        mine = {c["id"] for m in turn if isinstance(m, AIMessage) and m.name == self.agent_name
+                for c in m.tool_calls or []}
+        return not any(isinstance(m, ToolMessage) and m.tool_call_id in mine for m in turn)
 
 COMMON_RULES = """[공통 규칙]
 - 오늘 날짜는 {today}({weekday})이다. '오늘', '어제', '지난주 토요일' 같은 표현은 이 날짜 기준 YYYY-MM-DD로 바꿔 도구에 넣는다.
@@ -287,6 +293,6 @@ def build_agents(llm_for: Callable[[str], Any], tools: list[Any], today_fn: Call
             return [SystemMessage(system_prompt(_name, today_fn()))] + agent_view(state["messages"])
         model = llm_for(name)
         if name in FORCE_FIRST_TOOL:
-            model = FirstToolChat(inner=model, own_tools=frozenset(AGENT_TOOLS[name]))
+            model = FirstToolChat(inner=model, agent_name=name)
         agents.append(create_react_agent(model, tools_for(name, tools), prompt=prompt, name=name))
     return agents

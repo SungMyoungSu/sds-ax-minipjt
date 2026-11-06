@@ -380,18 +380,48 @@ def test_first_tool_chat_forces_until_own_tool_result():
     from agents import FirstToolChat
 
     rec = ChoiceRecorder(handler=lambda m: AIMessage(content="ok"), seen=[], choices=[])
-    chat = FirstToolChat(inner=rec, own_tools=frozenset(AGENT_TOOLS["recommend_agent"]))
+    chat = FirstToolChat(inner=rec, agent_name="recommend_agent")
     tools = [{"type": "function", "function": {"name": "search_volunteer", "parameters": {}}}]
     q = HumanMessage(content="남은 시간 확인하고 추천해줘")
-    prev = [q, call("get_progress"), ToolMessage(content="남은 16시간", name="get_progress", tool_call_id="call_get_progress_0"),
+    prev = [q, named(call("get_progress"), "record_agent"),
+            ToolMessage(content="남은 16시간", name="get_progress", tool_call_id="call_get_progress_0"),
             AIMessage(content="남은 시간은 16시간입니다.", name="record_agent")]
     chat._pick(prev, tools, {})
-    chat._pick(prev + [call("search_volunteer"),
+    chat._pick(prev + [named(call("search_volunteer"), "recommend_agent"),
                        ToolMessage(content="1건", name="search_volunteer", tool_call_id="call_search_volunteer_0")], tools, {})
     # 다음 턴의 새 사용자 발화 뒤에는 다시 강제
-    chat._pick(prev + [ToolMessage(content="1건", name="search_volunteer", tool_call_id="x"), HumanMessage(content="더")],
-               tools, {})
+    chat._pick(prev + [named(call("search_volunteer"), "recommend_agent"),
+                       ToolMessage(content="1건", name="search_volunteer", tool_call_id="call_search_volunteer_0"),
+                       HumanMessage(content="더")], tools, {})
     assert rec.choices == ["any", None, "any"]
+
+
+def named(message, agent):
+    message.name = agent
+    return message
+
+
+def test_first_tool_chat_ignores_shared_tool_result_of_previous_agent():
+    """get_progress는 record_agent와 report_agent가 함께 쓴다. record_agent가 부른 get_progress 결과가 있어도
+    report_agent는 자기가 아직 도구를 부르지 않았으므로 강제된다(인-아웃 13번: 강제가 꺼져 도구 없이
+    'for report generation.'만 답한 문제)."""
+    from langchain_core.messages import ToolMessage
+
+    from agents import FirstToolChat
+
+    rec = ChoiceRecorder(handler=lambda m: AIMessage(content="ok"), seen=[], choices=[])
+    chat = FirstToolChat(inner=rec, agent_name="report_agent")
+    tools = [{"type": "function", "function": {"name": "generate_report", "parameters": {}}}]
+    turn = [HumanMessage(content="오늘 2시간 봉사한 거 기록하고 회사 보고서도 만들어줘"),
+            AIMessage(content="", name="record_agent", tool_calls=[
+                {"name": "log_activity", "args": {}, "id": "r1"}, {"name": "get_progress", "args": {}, "id": "r2"}]),
+            ToolMessage(content="기록했습니다", name="log_activity", tool_call_id="r1"),
+            ToolMessage(content="남은 8시간", name="get_progress", tool_call_id="r2"),
+            AIMessage(content="기록했습니다.", name="record_agent")]
+    chat._pick(turn, tools, {})  # 공유 도구 get_progress 결과가 있어도 강제
+    chat._pick(turn + [AIMessage(content="", name="report_agent", tool_calls=[{"name": "get_progress", "args": {}, "id": "p1"}]),
+                       ToolMessage(content="남은 8시간", name="get_progress", tool_call_id="p1")], tools, {})
+    assert rec.choices == ["any", None]
 
 
 def test_force_first_tool_agents_exclude_record_agent():
